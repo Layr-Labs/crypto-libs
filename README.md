@@ -1,5 +1,10 @@
 # Crypto-libs
 
+> **⚠️ ALPHA SOFTWARE - NOT AUDITED ⚠️**  
+> **This library is in alpha development and has not undergone security auditing.**  
+> **DO NOT USE IN PRODUCTION ENVIRONMENTS OR WITH REAL FUNDS.**  
+> **Use at your own risk.**
+
 A comprehensive Go library for BLS (Boneh-Lynn-Shacham) signatures supporting both BLS12-381 and BN254 elliptic curves. This library provides production-ready cryptographic primitives with EIP-2335 compliant keystores and unified interfaces for multi-curve operations.
 
 ## Features
