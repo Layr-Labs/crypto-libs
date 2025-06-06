@@ -8,7 +8,6 @@ GO_FLAGS=
 # -----------------------------------------------------------------------------
 .PHONY: deps
 deps: deps/go
-	git submodule update --init --recursive
 	$(GO) install github.com/golangci/golangci-lint/cmd/golangci-lint@v1.61.0
 
 .PHONY: deps/go
