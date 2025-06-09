@@ -153,6 +153,15 @@ func NewPrivateKeyFromBytes(data []byte) (*PrivateKey, error) {
 	}, nil
 }
 
+// NewPrivateKeyFromHexString creates a private key from a hex string
+func NewPrivateKeyFromHexString(hexStr string) (*PrivateKey, error) {
+	data, err := hex.DecodeString(hexStr)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode hex string: %w", err)
+	}
+	return NewPrivateKeyFromBytes(data)
+}
+
 // Sign signs a message using the private key
 func (pk *PrivateKey) Sign(message []byte) (*Signature, error) {
 	// Hash the message to a point on G1
@@ -199,6 +208,11 @@ func (pk *PrivateKey) Public() *PublicKey {
 // Bytes returns the private key as a byte slice
 func (pk *PrivateKey) Bytes() []byte {
 	return pk.ScalarBytes
+}
+
+// ToHex returns the private key as a hex string
+func (pk *PrivateKey) ToHex() (string, error) {
+	return hex.EncodeToString(pk.ScalarBytes), nil
 }
 
 // Bytes returns the public key as a byte slice

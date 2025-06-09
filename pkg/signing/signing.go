@@ -56,6 +56,9 @@ type SigningScheme interface {
 	// NewPrivateKeyFromBytes creates a private key from bytes
 	NewPrivateKeyFromBytes(data []byte) (PrivateKey, error)
 
+	// NewPrivateKeyFromHexString creates a private key from a hex string
+	NewPrivateKeyFromHexString(hex string) (PrivateKey, error)
+
 	// NewPublicKeyFromBytes creates a public key from bytes
 	NewPublicKeyFromBytes(data []byte) (PublicKey, error)
 
