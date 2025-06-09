@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"math/big"
+	"strings"
 
 	bls12381 "github.com/consensys/gnark-crypto/ecc/bls12-381"
 	"github.com/consensys/gnark-crypto/ecc/bls12-381/fr"
@@ -182,6 +183,7 @@ func NewPrivateKeyFromBytes(data []byte) (*PrivateKey, error) {
 
 // NewPrivateKeyFromHexString creates a private key from a hex string
 func NewPrivateKeyFromHexString(hexStr string) (*PrivateKey, error) {
+	hexStr = strings.TrimPrefix(hexStr, "0x") // Remove "0x" prefix if present
 	data, err := hex.DecodeString(hexStr)
 	if err != nil {
 		return nil, fmt.Errorf("failed to decode hex string: %w", err)
