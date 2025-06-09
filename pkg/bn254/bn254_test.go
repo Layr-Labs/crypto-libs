@@ -346,6 +346,103 @@ func Test_BN254(t *testing.T) {
 			t.Error("Expected EIP-2333 to be unsupported, but no error was returned")
 		}
 	})
+
+	t.Run("HexStringSerialization", func(t *testing.T) {
+		// Generate a key pair
+		privateKey, _, err := GenerateKeyPair()
+		if err != nil {
+			t.Fatalf("Failed to generate key pair: %v", err)
+		}
+
+		// Test private key hex serialization
+		hexString, err := privateKey.ToHex()
+		if err != nil {
+			t.Fatalf("Failed to convert private key to hex: %v", err)
+		}
+
+		// Test that hex string is valid
+		if len(hexString) == 0 {
+			t.Error("Hex string is empty")
+		}
+
+		// Test private key hex deserialization
+		recoveredPrivateKey, err := NewPrivateKeyFromHexString(hexString)
+		if err != nil {
+			t.Fatalf("Failed to create private key from hex string: %v", err)
+		}
+
+		// Verify that original and recovered private keys are the same
+		if !bytes.Equal(privateKey.Bytes(), recoveredPrivateKey.Bytes()) {
+			t.Error("Recovered private key from hex doesn't match original")
+		}
+
+		// Test that the recovered private key works for signing
+		message := []byte("test message for hex key")
+		signature1, err := privateKey.Sign(message)
+		if err != nil {
+			t.Fatalf("Failed to sign with original private key: %v", err)
+		}
+
+		signature2, err := recoveredPrivateKey.Sign(message)
+		if err != nil {
+			t.Fatalf("Failed to sign with recovered private key: %v", err)
+		}
+
+		// Both signatures should be the same
+		if !bytes.Equal(signature1.Bytes(), signature2.Bytes()) {
+			t.Error("Signatures from original and recovered keys don't match")
+		}
+	})
+
+	t.Run("InvalidHexString", func(t *testing.T) {
+		// Test with invalid hex string
+		_, err := NewPrivateKeyFromHexString("invalid_hex")
+		if err == nil {
+			t.Error("Expected error for invalid hex string, but got none")
+		}
+
+		// Test with empty hex string (should create a zero private key)
+		zeroKey, err := NewPrivateKeyFromHexString("")
+		if err != nil {
+			t.Fatalf("Failed to create private key from empty hex string: %v", err)
+		}
+
+		// Zero key should have zero bytes
+		if len(zeroKey.Bytes()) != 0 {
+			t.Error("Zero key should have empty bytes")
+		}
+	})
+
+	t.Run("SchemeHexFunctionality", func(t *testing.T) {
+		// Test using the scheme interface
+		scheme := NewScheme()
+
+		// Generate a key pair through the scheme
+		privKey, _, err := scheme.GenerateKeyPair()
+		if err != nil {
+			t.Fatalf("Failed to generate key pair through scheme: %v", err)
+		}
+
+		// Get the underlying private key
+		bn254PrivKey := privKey.(*privateKeyAdapter).pk
+
+		// Test hex conversion
+		hexString, err := bn254PrivKey.ToHex()
+		if err != nil {
+			t.Fatalf("Failed to convert scheme private key to hex: %v", err)
+		}
+
+		// Test scheme hex deserialization
+		recoveredPrivKey, err := scheme.NewPrivateKeyFromHexString(hexString)
+		if err != nil {
+			t.Fatalf("Failed to create private key from hex through scheme: %v", err)
+		}
+
+		// Verify that original and recovered private keys are the same
+		if !bytes.Equal(privKey.Bytes(), recoveredPrivKey.Bytes()) {
+			t.Error("Recovered private key from hex through scheme doesn't match original")
+		}
+	})
 }
 
 func TestHashToG1(t *testing.T) {

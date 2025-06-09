@@ -54,6 +54,15 @@ func (s *Scheme) NewPrivateKeyFromBytes(data []byte) (signing.PrivateKey, error)
 	return &privateKeyAdapter{privKey}, nil
 }
 
+// NewPrivateKeyFromHexString creates a private key from a hex string
+func (s *Scheme) NewPrivateKeyFromHexString(hex string) (signing.PrivateKey, error) {
+	privKey, err := NewPrivateKeyFromHexString(hex)
+	if err != nil {
+		return nil, err
+	}
+	return &privateKeyAdapter{privKey}, nil
+}
+
 // NewPublicKeyFromBytes creates a public key from bytes
 func (s *Scheme) NewPublicKeyFromBytes(data []byte) (signing.PublicKey, error) {
 	pubKey, err := NewPublicKeyFromBytes(data)
