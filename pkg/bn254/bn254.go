@@ -193,6 +193,23 @@ func (pk *PrivateKey) SignG1Point(hashPoint *bn254.G1Affine) (*Signature, error)
 	}, nil
 }
 
+// SignSolidityCompatible signs a message hash using the Solidity-compatible hash-to-curve method
+func (pk *PrivateKey) SignSolidityCompatible(messageHash [32]byte) (*Signature, error) {
+	// Hash to G1 using Solidity method
+	hashPoint, err := SolidityHashToG1(messageHash)
+	if err != nil {
+		return nil, fmt.Errorf("failed to hash to G1: %w", err)
+	}
+
+	// Scalar multiply: signature = hashPoint * privateKey
+	sigPoint := new(bn254.G1Affine).ScalarMultiplication(hashPoint, pk.scalar)
+
+	return &Signature{
+		sig:      sigPoint,
+		SigBytes: sigPoint.Marshal(),
+	}, nil
+}
+
 // Public returns the public key corresponding to the private key
 func (pk *PrivateKey) Public() *PublicKey {
 	// Compute the public key in G2
@@ -359,6 +376,31 @@ func (s *Signature) Verify(publicKey *PublicKey, message []byte) (bool, error) {
 	return lhs.Equal(&rhs), nil
 }
 
+// VerifySolidityCompatible verifies a signature against a message hash using Solidity-compatible hash-to-curve
+func (s *Signature) VerifySolidityCompatible(publicKey *PublicKey, messageHash [32]byte) (bool, error) {
+	// Hash the message to a point on G1 using Solidity method
+	hashPoint, err := SolidityHashToG1(messageHash)
+	if err != nil {
+		return false, err
+	}
+
+	// e(S, G2) = e(H(m), PK)
+	// Left-hand side: e(S, G2)
+	lhs, err := bn254.Pair([]bn254.G1Affine{*s.sig}, []bn254.G2Affine{g2Gen})
+	if err != nil {
+		return false, err
+	}
+
+	// Right-hand side: e(H(m), PK)
+	rhs, err := bn254.Pair([]bn254.G1Affine{*hashPoint}, []bn254.G2Affine{*publicKey.g2Point})
+	if err != nil {
+		return false, err
+	}
+
+	// Check if the pairings are equal
+	return lhs.Equal(&rhs), nil
+}
+
 // AggregateSignatures combines multiple signatures into a single signature
 func AggregateSignatures(signatures []*Signature) (*Signature, error) {
 	if len(signatures) == 0 {
@@ -492,6 +534,60 @@ func hashToG1(message []byte) (*bn254.G1Affine, error) {
 	return &hashPoint, nil
 }
 
+// SolidityHashToG1 implements the same hash-to-curve algorithm as the Solidity BN254 library
+// This uses the try-and-increment method that matches BN254.hashToG1() in Solidity
+func SolidityHashToG1(hash [32]byte) (*bn254.G1Affine, error) {
+	// BN254 field modulus: 21888242871839275222246405745257275088696311157297823662689037894645226208583
+	fpModulus := FieldModulus
+
+	// Convert hash to big int and take modulo
+	hashBig := new(big.Int).SetBytes(hash[:])
+	x := new(big.Int).Mod(hashBig, fpModulus)
+
+	// BN254 curve coefficient b = 3
+	b := big.NewInt(3)
+
+	// Try-and-increment to find valid point
+	for i := 0; i < 1000; i++ {
+		// Calculate beta = x^3 + b (mod p)
+		beta := new(big.Int)
+		beta.Exp(x, big.NewInt(3), fpModulus)
+		beta.Add(beta, b)
+		beta.Mod(beta, fpModulus)
+
+		// Calculate y = sqrt(beta) using y = beta^((p+1)/4) since p ≡ 3 (mod 4)
+		exponent := new(big.Int).Add(fpModulus, big.NewInt(1))
+		exponent.Div(exponent, big.NewInt(4))
+		y := new(big.Int).Exp(beta, exponent, fpModulus)
+
+		// Verify y^2 == beta (mod p)
+		ySquared := new(big.Int).Exp(y, big.NewInt(2), fpModulus)
+		if ySquared.Cmp(beta) == 0 {
+			// Convert to G1Affine and return
+			point := &bn254.G1Affine{
+				X: newFpElement(x),
+				Y: newFpElement(y),
+			}
+			
+			// Verify the point is in the correct subgroup
+			if !point.IsInSubGroup() {
+				// If not in subgroup, increment and try again
+				x.Add(x, big.NewInt(1))
+				x.Mod(x, fpModulus)
+				continue
+			}
+			
+			return point, nil
+		}
+
+		// Increment x and try again
+		x.Add(x, big.NewInt(1))
+		x.Mod(x, fpModulus)
+	}
+
+	return nil, fmt.Errorf("failed to find valid point after 1000 iterations")
+}
+
 // AggregatePublicKeys combines multiple public keys into a single aggregated public key.
 func AggregatePublicKeys(pubKeys []*PublicKey) (*PublicKey, error) {
 	if len(pubKeys) == 0 {
@@ -550,10 +646,10 @@ func (p *G1Point) Add(p2 *G1Point) *G1Point {
 
 // ToPrecompileFormat converts a G1 point to the format expected by the Ethereum precompile
 func (p *G1Point) ToPrecompileFormat() ([]byte, error) {
-	if !p.IsInSubGroup() {
+	if !p.G1Affine.IsInSubGroup() {
 		return nil, ErrPointNotInSubgroup
 	}
-	return p.Marshal(), nil
+	return p.G1Affine.Marshal(), nil
 }
 
 // FromPrecompileFormat creates a G1 point from the Ethereum precompile format
@@ -636,10 +732,10 @@ func (p *G2Point) Add(p2 *G2Point) *G2Point {
 
 // ToPrecompileFormat converts a G2 point to the format expected by the Ethereum precompile
 func (p *G2Point) ToPrecompileFormat() ([]byte, error) {
-	if !p.IsInSubGroup() {
+	if !p.G2Affine.IsInSubGroup() {
 		return nil, ErrPointNotInSubgroup
 	}
-	return p.Marshal(), nil
+	return p.G2Affine.Marshal(), nil
 }
 
 // FromPrecompileFormat creates a G2 point from the Ethereum precompile format
