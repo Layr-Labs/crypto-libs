@@ -248,7 +248,7 @@ type SolidityBN254G2Point struct {
 }
 
 // NewPublicKeyFromSolidity creates a public key from a Solidity G1 and G2 points
-func NewPublicKeyFromSolidity(g1 SolidityBN254G1Point, g2 SolidityBN254G2Point) (*PublicKey, error) {
+func NewPublicKeyFromSolidity(g1 *SolidityBN254G1Point, g2 *SolidityBN254G2Point) (*PublicKey, error) {
 	// Create a new PublicKey struct
 	pubKey := &PublicKey{}
 
