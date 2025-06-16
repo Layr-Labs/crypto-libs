@@ -486,6 +486,56 @@ func BatchVerify(publicKeys []*PublicKey, message []byte, signatures []*Signatur
 	return lhs.Equal(&rhs), nil
 }
 
+// BatchVerifySolidityCompatible verifies multiple signatures in a single batch operation using the Solidity-compatible hash-to-curve method
+func BatchVerifySolidityCompatible(publicKeys []*PublicKey, messageHash [32]byte, signatures []*Signature) (bool, error) {
+	if len(publicKeys) != len(signatures) {
+		return false, fmt.Errorf("mismatched number of public keys and signatures")
+	}
+
+	// Hash to G1 using Solidity method
+	hashPoint, err := SolidityHashToG1(messageHash)
+	if err != nil {
+		return false, fmt.Errorf("failed to hash to G1: %w", err)
+	}
+
+	// For batch verification, we need to check:
+	// e(∑ S_i, G2) = e(H(m), ∑ PK_i)
+
+	// Aggregate signatures
+	aggSig, err := AggregateSignatures(signatures)
+	if err != nil {
+		return false, err
+	}
+
+	// Aggregate public keys
+	aggPk := new(bn254.G2Jac)
+	aggPk.FromAffine(publicKeys[0].g2Point)
+
+	for i := 1; i < len(publicKeys); i++ {
+		var temp bn254.G2Jac
+		temp.FromAffine(publicKeys[i].g2Point)
+		aggPk.AddAssign(&temp)
+	}
+
+	// Convert to affine coordinates
+	aggPkAffine := new(bn254.G2Affine)
+	aggPkAffine.FromJacobian(aggPk)
+
+	// Compute pairings
+	lhs, err := bn254.Pair([]bn254.G1Affine{*aggSig.sig}, []bn254.G2Affine{g2Gen})
+	if err != nil {
+		return false, err
+	}
+
+	rhs, err := bn254.Pair([]bn254.G1Affine{*hashPoint}, []bn254.G2Affine{*aggPkAffine})
+	if err != nil {
+		return false, err
+	}
+
+	// Check if the pairings are equal
+	return lhs.Equal(&rhs), nil
+}
+
 // AggregateVerify verifies an aggregated signature against multiple public keys and multiple messages
 func AggregateVerify(publicKeys []*PublicKey, messages [][]byte, aggSignature *Signature) (bool, error) {
 	if len(publicKeys) != len(messages) {
