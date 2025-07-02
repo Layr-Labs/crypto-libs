@@ -1,33 +1,25 @@
 package ecdsa
 
 import (
-	"crypto/elliptic"
+	"crypto/sha256"
 
 	"github.com/Layr-Labs/crypto-libs/pkg/signing"
-	"github.com/ethereum/go-ethereum/crypto/secp256k1"
 )
 
 // Ensure Scheme implements the SigningScheme interface
 var _ signing.SigningScheme = (*Scheme)(nil)
 
-// Scheme implements the SigningScheme interface for ECDSA
-type Scheme struct {
-	curve elliptic.Curve
-}
+// Scheme implements the SigningScheme interface for secp256k1 ECDSA
+type Scheme struct{}
 
-// NewScheme creates a new ECDSA signing scheme with secp256k1 curve (Ethereum compatible)
+// NewScheme creates a new secp256k1 ECDSA signing scheme
 func NewScheme() *Scheme {
-	return &Scheme{curve: secp256k1.S256()}
-}
-
-// NewSchemeWithCurve creates a new ECDSA signing scheme with specified curve
-func NewSchemeWithCurve(curve elliptic.Curve) *Scheme {
-	return &Scheme{curve: curve}
+	return &Scheme{}
 }
 
 // GenerateKeyPair creates a new random private key and the corresponding public key
 func (s *Scheme) GenerateKeyPair() (signing.PrivateKey, signing.PublicKey, error) {
-	privKey, pubKey, err := GenerateKeyPairWithCurve(s.curve)
+	privKey, pubKey, err := GenerateKeyPair()
 	if err != nil {
 		return nil, nil, err
 	}
@@ -37,7 +29,7 @@ func (s *Scheme) GenerateKeyPair() (signing.PrivateKey, signing.PublicKey, error
 
 // GenerateKeyPairFromSeed creates a deterministic private key and the corresponding public key from a seed
 func (s *Scheme) GenerateKeyPairFromSeed(seed []byte) (signing.PrivateKey, signing.PublicKey, error) {
-	privKey, pubKey, err := GenerateKeyPairFromSeedWithCurve(seed, s.curve)
+	privKey, pubKey, err := GenerateKeyPairFromSeed(seed)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -53,7 +45,7 @@ func (s *Scheme) GenerateKeyPairEIP2333(seed []byte, path []uint32) (signing.Pri
 
 // NewPrivateKeyFromBytes creates a private key from bytes
 func (s *Scheme) NewPrivateKeyFromBytes(data []byte) (signing.PrivateKey, error) {
-	privKey, err := NewPrivateKeyFromBytesWithCurve(data, s.curve)
+	privKey, err := NewPrivateKeyFromBytes(data)
 	if err != nil {
 		return nil, err
 	}
@@ -62,7 +54,7 @@ func (s *Scheme) NewPrivateKeyFromBytes(data []byte) (signing.PrivateKey, error)
 
 // NewPrivateKeyFromHexString creates a private key from a hex string
 func (s *Scheme) NewPrivateKeyFromHexString(hex string) (signing.PrivateKey, error) {
-	privKey, err := NewPrivateKeyFromHexStringWithCurve(hex, s.curve)
+	privKey, err := NewPrivateKeyFromHexString(hex)
 	if err != nil {
 		return nil, err
 	}
@@ -71,7 +63,7 @@ func (s *Scheme) NewPrivateKeyFromHexString(hex string) (signing.PrivateKey, err
 
 // NewPublicKeyFromBytes creates a public key from bytes
 func (s *Scheme) NewPublicKeyFromBytes(data []byte) (signing.PublicKey, error) {
-	pubKey, err := NewPublicKeyFromBytesWithCurve(data, s.curve)
+	pubKey, err := NewPublicKeyFromBytes(data)
 	if err != nil {
 		return nil, err
 	}
@@ -80,7 +72,7 @@ func (s *Scheme) NewPublicKeyFromBytes(data []byte) (signing.PublicKey, error) {
 
 // NewPublicKeyFromHexString creates a public key from a hex string
 func (s *Scheme) NewPublicKeyFromHexString(hex string) (signing.PublicKey, error) {
-	pubKey, err := NewPublicKeyFromHexStringWithCurve(hex, s.curve)
+	pubKey, err := NewPublicKeyFromHexString(hex)
 	if err != nil {
 		return nil, err
 	}
@@ -137,7 +129,10 @@ type privateKeyAdapter struct {
 
 // Sign implements the signing.PrivateKey interface
 func (a *privateKeyAdapter) Sign(message []byte) (signing.Signature, error) {
-	sig, err := a.pk.Sign(message)
+	// Hash the message
+	hash := sha256.Sum256(message)
+
+	sig, err := a.pk.Sign(hash[:])
 	if err != nil {
 		return nil, err
 	}
@@ -176,7 +171,10 @@ func (a *signatureAdapter) Verify(publicKey signing.PublicKey, message []byte) (
 		return false, signing.ErrInvalidPublicKeyType
 	}
 
-	return a.sig.Verify(ecdsaPubKey.pk, message)
+	// Hash the message
+	hash := sha256.Sum256(message)
+
+	return a.sig.Verify(ecdsaPubKey.pk, hash)
 }
 
 // Bytes implements the signing.Signature interface

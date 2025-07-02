@@ -1,11 +1,15 @@
 package ecdsa
 
 import (
-	"crypto/elliptic"
+	"crypto/ecdsa"
+	"crypto/rand"
+	"crypto/sha256"
 	"encoding/hex"
 	"testing"
 
 	"github.com/Layr-Labs/crypto-libs/pkg/signing"
+	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/crypto/secp256k1"
 )
 
 func TestGenerateKeyPair(t *testing.T) {
@@ -113,15 +117,16 @@ func TestSignAndVerify(t *testing.T) {
 	}
 
 	message := []byte("Hello, ECDSA!")
+	hash := sha256.Sum256(message)
 
 	// Sign the message
-	signature, err := privKey.Sign(message)
+	signature, err := privKey.Sign(hash[:])
 	if err != nil {
 		t.Fatalf("Failed to sign message: %v", err)
 	}
 
 	// Verify the signature
-	valid, err := signature.Verify(pubKey, message)
+	valid, err := signature.Verify(pubKey, hash)
 	if err != nil {
 		t.Fatalf("Failed to verify signature: %v", err)
 	}
@@ -132,7 +137,8 @@ func TestSignAndVerify(t *testing.T) {
 
 	// Test with wrong message
 	wrongMessage := []byte("Wrong message")
-	valid, err = signature.Verify(pubKey, wrongMessage)
+	wrongHash := sha256.Sum256(wrongMessage)
+	valid, err = signature.Verify(pubKey, wrongHash)
 	if err != nil {
 		t.Fatalf("Failed to verify signature with wrong message: %v", err)
 	}
@@ -149,9 +155,10 @@ func TestSignatureFromBytes(t *testing.T) {
 	}
 
 	message := []byte("Test message")
+	hash := sha256.Sum256(message)
 
 	// Sign the message
-	originalSig, err := privKey.Sign(message)
+	originalSig, err := privKey.Sign(hash[:])
 	if err != nil {
 		t.Fatalf("Failed to sign message: %v", err)
 	}
@@ -164,7 +171,7 @@ func TestSignatureFromBytes(t *testing.T) {
 	}
 
 	// Verify the restored signature
-	valid, err := restoredSig.Verify(pubKey, message)
+	valid, err := restoredSig.Verify(pubKey, hash)
 	if err != nil {
 		t.Fatalf("Failed to verify restored signature: %v", err)
 	}
@@ -174,37 +181,27 @@ func TestSignatureFromBytes(t *testing.T) {
 	}
 }
 
-func TestDifferentCurves(t *testing.T) {
-	curves := []elliptic.Curve{
-		elliptic.P224(),
-		elliptic.P256(),
-		elliptic.P384(),
-		elliptic.P521(),
+func TestSecp256k1SigningAndVerification(t *testing.T) {
+	message := []byte("Test message for secp256k1")
+	hash := sha256.Sum256(message)
+
+	privKey, pubKey, err := GenerateKeyPair()
+	if err != nil {
+		t.Fatalf("Failed to generate key pair: %v", err)
 	}
 
-	message := []byte("Test message for different curves")
+	signature, err := privKey.Sign(hash[:])
+	if err != nil {
+		t.Fatalf("Failed to sign: %v", err)
+	}
 
-	for _, curve := range curves {
-		t.Run(curve.Params().Name, func(t *testing.T) {
-			privKey, pubKey, err := GenerateKeyPairWithCurve(curve)
-			if err != nil {
-				t.Fatalf("Failed to generate key pair for %s: %v", curve.Params().Name, err)
-			}
+	valid, err := signature.Verify(pubKey, hash)
+	if err != nil {
+		t.Fatalf("Failed to verify: %v", err)
+	}
 
-			signature, err := privKey.Sign(message)
-			if err != nil {
-				t.Fatalf("Failed to sign with %s: %v", curve.Params().Name, err)
-			}
-
-			valid, err := signature.Verify(pubKey, message)
-			if err != nil {
-				t.Fatalf("Failed to verify with %s: %v", curve.Params().Name, err)
-			}
-
-			if !valid {
-				t.Fatalf("Signature verification failed for %s", curve.Params().Name)
-			}
-		})
+	if !valid {
+		t.Fatal("Signature verification failed")
 	}
 }
 
@@ -319,9 +316,10 @@ func TestEthereumCompatibility(t *testing.T) {
 	}
 
 	message := []byte("Test message for Ethereum compatibility")
-	
+	hash := sha256.Sum256(message)
+
 	// Sign the message
-	signature, err := privKey.Sign(message)
+	signature, err := privKey.Sign(hash[:])
 	if err != nil {
 		t.Fatalf("Failed to sign message: %v", err)
 	}
@@ -351,7 +349,7 @@ func TestEthereumCompatibility(t *testing.T) {
 	}
 
 	// Verify the signature
-	valid, err := signature.Verify(pubKey, message)
+	valid, err := signature.Verify(pubKey, hash)
 	if err != nil {
 		t.Fatalf("Failed to verify signature: %v", err)
 	}
@@ -392,5 +390,101 @@ func TestKeyGeneration_EdgeCases(t *testing.T) {
 	_, err = NewSignatureFromBytes(invalidSig)
 	if err == nil {
 		t.Fatal("Should fail with 64-byte signature (expected 65 bytes)")
+	}
+}
+
+func TestConvertFromStandardECDSAPrivateKey(t *testing.T) {
+	// Generate a standard secp256k1 crypto/ecdsa private key
+	stdPrivKey, err := ecdsa.GenerateKey(secp256k1.S256(), rand.Reader)
+	if err != nil {
+		t.Fatalf("Failed to generate standard ECDSA private key: %v", err)
+	}
+
+	// Convert to module's PrivateKey using the private key scalar bytes
+	privKeyBytes := stdPrivKey.D.Bytes()
+
+	// Pad to 32 bytes if needed
+	if len(privKeyBytes) < 32 {
+		padded := make([]byte, 32)
+		copy(padded[32-len(privKeyBytes):], privKeyBytes)
+		privKeyBytes = padded
+	}
+
+	modulePrivKey, err := NewPrivateKeyFromBytes(privKeyBytes)
+	if err != nil {
+		t.Fatalf("Failed to convert standard ECDSA private key to module private key: %v", err)
+	}
+
+	// Verify the conversion worked by comparing the private key scalars
+	if stdPrivKey.D.Cmp(modulePrivKey.D) != 0 {
+		t.Fatal("Converted private key scalar does not match original")
+	}
+
+	// Verify the public keys match
+	stdPubKey := &stdPrivKey.PublicKey
+	modulePubKey := modulePrivKey.Public()
+
+	if stdPubKey.X.Cmp(modulePubKey.X) != 0 || stdPubKey.Y.Cmp(modulePubKey.Y) != 0 {
+		t.Fatal("Converted public key does not match original")
+	}
+
+	// Test signing and verification works with the converted key
+	message := []byte("Test message for converted key")
+	hash := sha256.Sum256(message)
+	signature, err := modulePrivKey.Sign(hash[:])
+	if err != nil {
+		t.Fatalf("Failed to sign with converted private key: %v", err)
+	}
+
+	valid, err := signature.Verify(modulePubKey, hash)
+	if err != nil {
+		t.Fatalf("Failed to verify signature from converted key: %v", err)
+	}
+
+	if !valid {
+		t.Fatal("Signature verification failed for converted key")
+	}
+}
+
+func TestVerifyWithAddress(t *testing.T) {
+	// Generate key pair
+	privKey, _, err := GenerateKeyPair()
+	if err != nil {
+		t.Fatalf("Failed to generate key pair: %v", err)
+	}
+
+	// Derive address from private key
+	expectedAddr, err := privKey.DeriveAddress()
+	if err != nil {
+		t.Fatalf("Failed to derive address: %v", err)
+	}
+
+	// Sign a message
+	message := []byte("Test message for address verification")
+	hash := sha256.Sum256(message)
+	signature, err := privKey.Sign(hash[:])
+	if err != nil {
+		t.Fatalf("Failed to sign message: %v", err)
+	}
+
+	// Verify with correct address
+	valid, err := signature.VerifyWithAddress(hash[:], expectedAddr)
+	if err != nil {
+		t.Fatalf("Failed to verify with address: %v", err)
+	}
+
+	if !valid {
+		t.Fatal("Signature verification with correct address failed")
+	}
+
+	// Test with wrong address
+	wrongAddr := common.HexToAddress("0x1234567890123456789012345678901234567890")
+	valid, err = signature.VerifyWithAddress(hash[:], wrongAddr)
+	if err != nil {
+		t.Fatalf("Failed to verify with wrong address: %v", err)
+	}
+
+	if valid {
+		t.Fatal("Signature verification should have failed with wrong address")
 	}
 }

@@ -198,8 +198,14 @@ type signatureAdapter struct {
 
 // Verify implements the signing.Signature interface
 func (a *signatureAdapter) Verify(publicKey signing.PublicKey, message []byte) (bool, error) {
-	bn254PubKey, ok := publicKey.(*PublicKey)
-	if !ok {
+	var bn254PubKey *PublicKey
+	
+	// Try adapter type first
+	if adapter, ok := publicKey.(*publicKeyAdapter); ok {
+		bn254PubKey = adapter.pk
+	} else if rawKey, ok := publicKey.(*PublicKey); ok {
+		bn254PubKey = rawKey
+	} else {
 		return false, signing.ErrInvalidPublicKeyType
 	}
 
