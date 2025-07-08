@@ -199,7 +199,7 @@ type signatureAdapter struct {
 // Verify implements the signing.Signature interface
 func (a *signatureAdapter) Verify(publicKey signing.PublicKey, message []byte) (bool, error) {
 	var bn254PubKey *PublicKey
-	
+
 	// Try adapter type first
 	if adapter, ok := publicKey.(*publicKeyAdapter); ok {
 		bn254PubKey = adapter.pk
