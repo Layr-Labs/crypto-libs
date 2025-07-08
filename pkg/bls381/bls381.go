@@ -280,6 +280,16 @@ func (s *Signature) Bytes() []byte {
 	return s.SigBytes
 }
 
+// Add adds another signature to this one
+func (s *Signature) Add(other *Signature) *Signature {
+	if other == nil || other.sig == nil {
+		return s
+	}
+	s.sig.Add(s.sig, other.sig)
+	s.SigBytes = s.sig.Marshal()
+	return s
+}
+
 // NewSignatureFromBytes creates a signature from bytes
 func NewSignatureFromBytes(data []byte) (*Signature, error) {
 	sig := new(bls12381.G1Affine)
@@ -313,6 +323,10 @@ func (s *Signature) Verify(publicKey *PublicKey, message []byte) (bool, error) {
 
 	// Check if the pairings are equal
 	return lhs.Equal(&rhs), nil
+}
+
+func (sig *Signature) VerifySolidityCompatible(publicKey *PublicKey, messageHash [32]byte) (bool, error) {
+	return sig.Verify(publicKey, messageHash[:])
 }
 
 // AggregateSignatures combines multiple signatures into a single signature
