@@ -1,6 +1,8 @@
 package bn254
 
 import (
+	"fmt"
+
 	"github.com/Layr-Labs/crypto-libs/pkg/signing"
 )
 
@@ -86,12 +88,26 @@ func (s *Scheme) NewSignatureFromBytes(data []byte) (signing.Signature, error) {
 
 // AggregateSignatures combines multiple signatures into a single signature
 func (s *Scheme) AggregateSignatures(signatures []signing.Signature) (signing.Signature, error) {
+	// SECURITY: Input validation
+	if signatures == nil {
+		return nil, fmt.Errorf("signatures slice cannot be nil")
+	}
+	if len(signatures) == 0 {
+		return nil, fmt.Errorf("signatures slice cannot be empty")
+	}
+
 	// Convert generic signatures to BN254 specific signatures
 	bn254Sigs := make([]*Signature, len(signatures))
 	for i, sig := range signatures {
+		if sig == nil {
+			return nil, fmt.Errorf("signature at index %d cannot be nil", i)
+		}
 		bn254Sig, ok := sig.(*signatureAdapter)
 		if !ok {
 			return nil, signing.ErrInvalidSignatureType
+		}
+		if bn254Sig.sig == nil {
+			return nil, fmt.Errorf("signature at index %d cannot be nil", i)
 		}
 		bn254Sigs[i] = bn254Sig.sig
 	}
@@ -106,12 +122,38 @@ func (s *Scheme) AggregateSignatures(signatures []signing.Signature) (signing.Si
 
 // BatchVerify verifies multiple signatures in a single batch operation
 func (s *Scheme) BatchVerify(publicKeys []signing.PublicKey, message []byte, signatures []signing.Signature) (bool, error) {
+	// SECURITY: Input validation
+	if publicKeys == nil {
+		return false, fmt.Errorf("public keys slice cannot be nil")
+	}
+	if signatures == nil {
+		return false, fmt.Errorf("signatures slice cannot be nil")
+	}
+	if message == nil {
+		return false, fmt.Errorf("message cannot be nil")
+	}
+	if len(publicKeys) == 0 {
+		return false, fmt.Errorf("public keys slice cannot be empty")
+	}
+	if len(signatures) == 0 {
+		return false, fmt.Errorf("signatures slice cannot be empty")
+	}
+	if len(publicKeys) != len(signatures) {
+		return false, fmt.Errorf("public keys and signatures length mismatch")
+	}
+
 	// Convert generic public keys to BN254 specific public keys
 	bn254PubKeys := make([]*PublicKey, len(publicKeys))
 	for i, pubKey := range publicKeys {
+		if pubKey == nil {
+			return false, fmt.Errorf("public key at index %d cannot be nil", i)
+		}
 		bn254PubKey, ok := pubKey.(*publicKeyAdapter)
 		if !ok {
 			return false, signing.ErrInvalidPublicKeyType
+		}
+		if bn254PubKey.pk == nil {
+			return false, fmt.Errorf("public key at index %d cannot be nil", i)
 		}
 		bn254PubKeys[i] = bn254PubKey.pk
 	}
@@ -119,9 +161,15 @@ func (s *Scheme) BatchVerify(publicKeys []signing.PublicKey, message []byte, sig
 	// Convert generic signatures to BN254 specific signatures
 	bn254Sigs := make([]*Signature, len(signatures))
 	for i, sig := range signatures {
+		if sig == nil {
+			return false, fmt.Errorf("signature at index %d cannot be nil", i)
+		}
 		bn254Sig, ok := sig.(*signatureAdapter)
 		if !ok {
 			return false, signing.ErrInvalidSignatureType
+		}
+		if bn254Sig.sig == nil {
+			return false, fmt.Errorf("signature at index %d cannot be nil", i)
 		}
 		bn254Sigs[i] = bn254Sig.sig
 	}
@@ -131,12 +179,38 @@ func (s *Scheme) BatchVerify(publicKeys []signing.PublicKey, message []byte, sig
 
 // AggregateVerify verifies an aggregated signature against multiple public keys and multiple messages
 func (s *Scheme) AggregateVerify(publicKeys []signing.PublicKey, messages [][]byte, aggSignature signing.Signature) (bool, error) {
+	// SECURITY: Input validation
+	if publicKeys == nil {
+		return false, fmt.Errorf("public keys slice cannot be nil")
+	}
+	if messages == nil {
+		return false, fmt.Errorf("messages slice cannot be nil")
+	}
+	if aggSignature == nil {
+		return false, fmt.Errorf("aggregated signature cannot be nil")
+	}
+	if len(publicKeys) == 0 {
+		return false, fmt.Errorf("public keys slice cannot be empty")
+	}
+	if len(messages) == 0 {
+		return false, fmt.Errorf("messages slice cannot be empty")
+	}
+	if len(publicKeys) != len(messages) {
+		return false, fmt.Errorf("public keys and messages length mismatch")
+	}
+
 	// Convert generic public keys to BN254 specific public keys
 	bn254PubKeys := make([]*PublicKey, len(publicKeys))
 	for i, pubKey := range publicKeys {
+		if pubKey == nil {
+			return false, fmt.Errorf("public key at index %d cannot be nil", i)
+		}
 		bn254PubKey, ok := pubKey.(*publicKeyAdapter)
 		if !ok {
 			return false, signing.ErrInvalidPublicKeyType
+		}
+		if bn254PubKey.pk == nil {
+			return false, fmt.Errorf("public key at index %d cannot be nil", i)
 		}
 		bn254PubKeys[i] = bn254PubKey.pk
 	}
@@ -145,6 +219,9 @@ func (s *Scheme) AggregateVerify(publicKeys []signing.PublicKey, messages [][]by
 	bn254Sig, ok := aggSignature.(*signatureAdapter)
 	if !ok {
 		return false, signing.ErrInvalidSignatureType
+	}
+	if bn254Sig.sig == nil {
+		return false, fmt.Errorf("aggregated signature cannot be nil")
 	}
 
 	return AggregateVerify(bn254PubKeys, messages, bn254Sig.sig)
@@ -159,6 +236,10 @@ type privateKeyAdapter struct {
 
 // Sign implements the signing.PrivateKey interface
 func (a *privateKeyAdapter) Sign(message []byte) (signing.Signature, error) {
+	if message == nil {
+		return nil, fmt.Errorf("message cannot be nil")
+	}
+
 	sig, err := a.pk.Sign(message)
 	if err != nil {
 		return nil, err
@@ -198,15 +279,36 @@ type signatureAdapter struct {
 
 // Verify implements the signing.Signature interface
 func (a *signatureAdapter) Verify(publicKey signing.PublicKey, message []byte) (bool, error) {
+	// SECURITY: Input validation
+	if a == nil {
+		return false, fmt.Errorf("signature adapter cannot be nil")
+	}
+	if a.sig == nil {
+		return false, fmt.Errorf("signature cannot be nil")
+	}
+	if publicKey == nil {
+		return false, fmt.Errorf("public key cannot be nil")
+	}
+	if message == nil {
+		return false, fmt.Errorf("message cannot be nil")
+	}
+
 	var bn254PubKey *PublicKey
 
 	// Try adapter type first
 	if adapter, ok := publicKey.(*publicKeyAdapter); ok {
+		if adapter.pk == nil {
+			return false, fmt.Errorf("public key cannot be nil")
+		}
 		bn254PubKey = adapter.pk
 	} else if rawKey, ok := publicKey.(*PublicKey); ok {
 		bn254PubKey = rawKey
 	} else {
 		return false, signing.ErrInvalidPublicKeyType
+	}
+
+	if bn254PubKey == nil {
+		return false, fmt.Errorf("public key cannot be nil")
 	}
 
 	return a.sig.Verify(bn254PubKey, message)
