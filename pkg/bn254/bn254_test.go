@@ -2,6 +2,7 @@ package bn254
 
 import (
 	"bytes"
+	"encoding/hex"
 	"math/big"
 	"strings"
 	"testing"
@@ -2112,6 +2113,1047 @@ func TestInputValidation_UtilityFunctions(t *testing.T) {
 		}
 		if point == nil {
 			t.Error("Expected non-nil point for max hash")
+		}
+	})
+}
+
+// TestBatchVerifySolidityCompatible tests the BatchVerifySolidityCompatible function with various scenarios
+func TestBatchVerifySolidityCompatible(t *testing.T) {
+	// Generate test data
+	numKeys := 3
+	privateKeys := make([]*PrivateKey, numKeys)
+	publicKeys := make([]*PublicKey, numKeys)
+	signatures := make([]*Signature, numKeys)
+
+	var testHash [32]byte
+	for i := range testHash {
+		testHash[i] = byte(i)
+	}
+
+	for i := 0; i < numKeys; i++ {
+		var err error
+		privateKeys[i], publicKeys[i], err = GenerateKeyPair()
+		if err != nil {
+			t.Fatalf("Failed to generate key pair %d: %v", i, err)
+		}
+
+		signatures[i], err = privateKeys[i].SignSolidityCompatible(testHash)
+		if err != nil {
+			t.Fatalf("Failed to sign with key %d: %v", i, err)
+		}
+	}
+
+	t.Run("ValidBatch", func(t *testing.T) {
+		valid, err := BatchVerifySolidityCompatible(publicKeys, testHash, signatures)
+		if err != nil {
+			t.Fatalf("Expected no error for valid batch, but got: %v", err)
+		}
+		if !valid {
+			t.Error("Expected valid batch verification")
+		}
+	})
+
+	t.Run("SingleSignature", func(t *testing.T) {
+		valid, err := BatchVerifySolidityCompatible(publicKeys[:1], testHash, signatures[:1])
+		if err != nil {
+			t.Fatalf("Expected no error for single signature, but got: %v", err)
+		}
+		if !valid {
+			t.Error("Expected valid single signature verification")
+		}
+	})
+
+	t.Run("InvalidSignature", func(t *testing.T) {
+		// Create a wrong signature
+		wrongPrivKey, _, err := GenerateKeyPair()
+		if err != nil {
+			t.Fatalf("Failed to generate wrong key: %v", err)
+		}
+		wrongSig, err := wrongPrivKey.SignSolidityCompatible(testHash)
+		if err != nil {
+			t.Fatalf("Failed to sign with wrong key: %v", err)
+		}
+
+		invalidSigs := []*Signature{wrongSig}
+		valid, err := BatchVerifySolidityCompatible(publicKeys[:1], testHash, invalidSigs)
+		if err != nil {
+			t.Fatalf("Expected no error for invalid signature, but got: %v", err)
+		}
+		if valid {
+			t.Error("Expected invalid signature verification")
+		}
+	})
+
+	t.Run("DifferentHash", func(t *testing.T) {
+		var differentHash [32]byte
+		for i := range differentHash {
+			differentHash[i] = byte(255 - i)
+		}
+
+		valid, err := BatchVerifySolidityCompatible(publicKeys, differentHash, signatures)
+		if err != nil {
+			t.Fatalf("Expected no error for different hash, but got: %v", err)
+		}
+		if valid {
+			t.Error("Expected invalid verification with different hash")
+		}
+	})
+
+	t.Run("ManySignatures", func(t *testing.T) {
+		// Test with many signatures
+		manyPrivKeys := make([]*PrivateKey, 10)
+		manyPubKeys := make([]*PublicKey, 10)
+		manySigs := make([]*Signature, 10)
+
+		for i := 0; i < 10; i++ {
+			var err error
+			manyPrivKeys[i], manyPubKeys[i], err = GenerateKeyPair()
+			if err != nil {
+				t.Fatalf("Failed to generate key pair %d: %v", i, err)
+			}
+
+			manySigs[i], err = manyPrivKeys[i].SignSolidityCompatible(testHash)
+			if err != nil {
+				t.Fatalf("Failed to sign with key %d: %v", i, err)
+			}
+		}
+
+		valid, err := BatchVerifySolidityCompatible(manyPubKeys, testHash, manySigs)
+		if err != nil {
+			t.Fatalf("Expected no error for many signatures, but got: %v", err)
+		}
+		if !valid {
+			t.Error("Expected valid verification with many signatures")
+		}
+	})
+}
+
+// TestSignatureOperations tests signature Add and Sub methods
+func TestSignatureOperations(t *testing.T) {
+	// Generate test signatures
+	privKey1, _, err := GenerateKeyPair()
+	if err != nil {
+		t.Fatalf("Failed to generate key pair 1: %v", err)
+	}
+	privKey2, _, err := GenerateKeyPair()
+	if err != nil {
+		t.Fatalf("Failed to generate key pair 2: %v", err)
+	}
+
+	message := []byte("test message")
+	sig1, err := privKey1.Sign(message)
+	if err != nil {
+		t.Fatalf("Failed to sign with key 1: %v", err)
+	}
+	sig2, err := privKey2.Sign(message)
+	if err != nil {
+		t.Fatalf("Failed to sign with key 2: %v", err)
+	}
+
+	t.Run("Add_ValidSignatures", func(t *testing.T) {
+		// Create copies to avoid modifying originals
+		sig1Copy := &Signature{
+			sig:      sig1.sig,
+			SigBytes: sig1.SigBytes,
+		}
+		sig2Copy := &Signature{
+			sig:      sig2.sig,
+			SigBytes: sig2.SigBytes,
+		}
+
+		result := sig1Copy.Add(sig2Copy)
+		if result == nil {
+			t.Error("Expected non-nil result from Add operation")
+		}
+		if result != sig1Copy {
+			t.Error("Expected Add to return the same signature object")
+		}
+	})
+
+	t.Run("Sub_ValidSignatures", func(t *testing.T) {
+		// Create copies to avoid modifying originals
+		sig1Copy := &Signature{
+			sig:      sig1.sig,
+			SigBytes: sig1.SigBytes,
+		}
+		sig2Copy := &Signature{
+			sig:      sig2.sig,
+			SigBytes: sig2.SigBytes,
+		}
+
+		result := sig1Copy.Sub(sig2Copy)
+		if result == nil {
+			t.Error("Expected non-nil result from Sub operation")
+		}
+		if result != sig1Copy {
+			t.Error("Expected Sub to return the same signature object")
+		}
+	})
+
+	t.Run("Add_SameSignature", func(t *testing.T) {
+		sig1Copy := &Signature{
+			sig:      sig1.sig,
+			SigBytes: sig1.SigBytes,
+		}
+		sig1Copy2 := &Signature{
+			sig:      sig1.sig,
+			SigBytes: sig1.SigBytes,
+		}
+
+		result := sig1Copy.Add(sig1Copy2)
+		if result == nil {
+			t.Error("Expected non-nil result from Add operation")
+		}
+	})
+
+	t.Run("Sub_SameSignature", func(t *testing.T) {
+		sig1Copy := &Signature{
+			sig:      sig1.sig,
+			SigBytes: sig1.SigBytes,
+		}
+		sig1Copy2 := &Signature{
+			sig:      sig1.sig,
+			SigBytes: sig1.SigBytes,
+		}
+
+		result := sig1Copy.Sub(sig1Copy2)
+		if result == nil {
+			t.Error("Expected non-nil result from Sub operation")
+		}
+	})
+}
+
+// TestG1PointOperations tests G1 point operations with better coverage
+func TestG1PointOperations(t *testing.T) {
+	// Generate test data
+	_, pubKey, err := GenerateKeyPair()
+	if err != nil {
+		t.Fatalf("Failed to generate key pair: %v", err)
+	}
+
+	t.Run("AddPublicKey_ValidPublicKey", func(t *testing.T) {
+		point := NewZeroG1Point()
+		result := point.AddPublicKey(pubKey)
+		if result == nil {
+			t.Error("Expected non-nil result from AddPublicKey")
+		}
+		if result != point {
+			t.Error("Expected AddPublicKey to return the same point object")
+		}
+	})
+
+	t.Run("AddPublicKey_PublicKeyWithNilG1Point", func(t *testing.T) {
+		point := NewZeroG1Point()
+		pubKeyWithNilG1 := &PublicKey{
+			g1Point: nil,
+			g2Point: pubKey.g2Point,
+		}
+		result := point.AddPublicKey(pubKeyWithNilG1)
+		if result == nil {
+			t.Error("Expected non-nil result from AddPublicKey")
+		}
+		if result != point {
+			t.Error("Expected AddPublicKey to return the same point object")
+		}
+	})
+
+	t.Run("ToPrecompileFormat_ValidPoint", func(t *testing.T) {
+		// Create a valid point at infinity (zero point)
+		point := NewZeroG1Point()
+		_, err := point.ToPrecompileFormat()
+		if err != nil {
+			t.Errorf("Expected no error for valid point, but got: %v", err)
+		}
+	})
+
+	t.Run("ToPrecompileFormat_InvalidPoint", func(t *testing.T) {
+		// Create an invalid point (not in subgroup)
+		point := NewG1Point(big.NewInt(1), big.NewInt(1))
+		_, err := point.ToPrecompileFormat()
+		if err == nil {
+			t.Error("Expected error for invalid point, but got none")
+		}
+	})
+}
+
+// TestG2PointOperations tests G2 point operations with better coverage
+func TestG2PointOperations(t *testing.T) {
+	// Generate test data
+	_, pubKey, err := GenerateKeyPair()
+	if err != nil {
+		t.Fatalf("Failed to generate key pair: %v", err)
+	}
+
+	t.Run("AddPublicKey_ValidPublicKey", func(t *testing.T) {
+		point := NewZeroG2Point()
+		result := point.AddPublicKey(pubKey)
+		if result == nil {
+			t.Error("Expected non-nil result from AddPublicKey")
+		}
+		if result != point {
+			t.Error("Expected AddPublicKey to return the same point object")
+		}
+	})
+
+	t.Run("AddPublicKey_PublicKeyWithNilG2Point", func(t *testing.T) {
+		point := NewZeroG2Point()
+		pubKeyWithNilG2 := &PublicKey{
+			g1Point: pubKey.g1Point,
+			g2Point: nil,
+		}
+		result := point.AddPublicKey(pubKeyWithNilG2)
+		if result == nil {
+			t.Error("Expected non-nil result from AddPublicKey")
+		}
+		if result != point {
+			t.Error("Expected AddPublicKey to return the same point object")
+		}
+	})
+
+	t.Run("ToPrecompileFormat_ValidPoint", func(t *testing.T) {
+		// Create a valid point at infinity (zero point)
+		point := NewZeroG2Point()
+		_, err := point.ToPrecompileFormat()
+		if err != nil {
+			t.Errorf("Expected no error for valid point, but got: %v", err)
+		}
+	})
+
+	t.Run("ToPrecompileFormat_InvalidPoint", func(t *testing.T) {
+		// Create an invalid point (not in subgroup)
+		point := NewG2Point(big.NewInt(1), big.NewInt(1), big.NewInt(1), big.NewInt(1))
+		_, err := point.ToPrecompileFormat()
+		if err == nil {
+			t.Error("Expected error for invalid point, but got none")
+		}
+	})
+}
+
+// TestPublicKeyOperations tests public key operations with better coverage
+func TestPublicKeyOperations(t *testing.T) {
+	// Generate test data
+	_, pubKey1, err := GenerateKeyPair()
+	if err != nil {
+		t.Fatalf("Failed to generate key pair 1: %v", err)
+	}
+	_, pubKey2, err := GenerateKeyPair()
+	if err != nil {
+		t.Fatalf("Failed to generate key pair 2: %v", err)
+	}
+
+	t.Run("Sub_ValidPublicKey", func(t *testing.T) {
+		// Create a copy to avoid modifying original
+		pubKey1Copy := &PublicKey{
+			g1Point:    pubKey1.g1Point,
+			g2Point:    pubKey1.g2Point,
+			PointBytes: pubKey1.PointBytes,
+		}
+
+		result := pubKey1Copy.Sub(pubKey2)
+		if result == nil {
+			t.Error("Expected non-nil result from Sub operation")
+		}
+		if result != pubKey1Copy {
+			t.Error("Expected Sub to return the same public key object")
+		}
+	})
+
+	t.Run("Sub_PublicKeyWithNilG2Point", func(t *testing.T) {
+		pubKey1Copy := &PublicKey{
+			g1Point:    pubKey1.g1Point,
+			g2Point:    pubKey1.g2Point,
+			PointBytes: pubKey1.PointBytes,
+		}
+
+		pubKeyWithNilG2 := &PublicKey{
+			g1Point: pubKey2.g1Point,
+			g2Point: nil,
+		}
+
+		result := pubKey1Copy.Sub(pubKeyWithNilG2)
+		if result == nil {
+			t.Error("Expected non-nil result from Sub operation")
+		}
+		if result != pubKey1Copy {
+			t.Error("Expected Sub to return the same public key object")
+		}
+	})
+
+	t.Run("Sub_SamePublicKey", func(t *testing.T) {
+		pubKey1Copy := &PublicKey{
+			g1Point:    pubKey1.g1Point,
+			g2Point:    pubKey1.g2Point,
+			PointBytes: pubKey1.PointBytes,
+		}
+		pubKey1Copy2 := &PublicKey{
+			g1Point:    pubKey1.g1Point,
+			g2Point:    pubKey1.g2Point,
+			PointBytes: pubKey1.PointBytes,
+		}
+
+		result := pubKey1Copy.Sub(pubKey1Copy2)
+		if result == nil {
+			t.Error("Expected non-nil result from Sub operation")
+		}
+	})
+}
+
+// TestSchemeAdapterMethods_ExtendedCoverage tests scheme adapter methods with better coverage
+func TestSchemeAdapterMethods_ExtendedCoverage(t *testing.T) {
+	scheme := NewScheme()
+
+	t.Run("GenerateKeyPairFromSeed_ValidSeed", func(t *testing.T) {
+		seed := make([]byte, 32)
+		for i := range seed {
+			seed[i] = byte(i)
+		}
+
+		privKey, pubKey, err := scheme.GenerateKeyPairFromSeed(seed)
+		if err != nil {
+			t.Fatalf("Expected no error for valid seed, but got: %v", err)
+		}
+		if privKey == nil {
+			t.Error("Expected non-nil private key")
+		}
+		if pubKey == nil {
+			t.Error("Expected non-nil public key")
+		}
+	})
+
+	t.Run("NewPrivateKeyFromBytes_ValidData", func(t *testing.T) {
+		data := make([]byte, 32)
+		for i := range data {
+			data[i] = byte(i)
+		}
+
+		privKey, err := scheme.NewPrivateKeyFromBytes(data)
+		if err != nil {
+			t.Fatalf("Expected no error for valid data, but got: %v", err)
+		}
+		if privKey == nil {
+			t.Error("Expected non-nil private key")
+		}
+	})
+
+	t.Run("NewPublicKeyFromBytes_ValidData", func(t *testing.T) {
+		// Generate a valid public key first
+		_, pubKey, err := GenerateKeyPair()
+		if err != nil {
+			t.Fatalf("Failed to generate key pair: %v", err)
+		}
+
+		data := pubKey.Bytes()
+		schemePubKey, err := scheme.NewPublicKeyFromBytes(data)
+		if err != nil {
+			t.Fatalf("Expected no error for valid data, but got: %v", err)
+		}
+		if schemePubKey == nil {
+			t.Error("Expected non-nil public key")
+		}
+	})
+
+	t.Run("NewPublicKeyFromHexString_ValidHex", func(t *testing.T) {
+		// Generate a valid public key first
+		_, pubKey, err := GenerateKeyPair()
+		if err != nil {
+			t.Fatalf("Failed to generate key pair: %v", err)
+		}
+
+		hexStr := hex.EncodeToString(pubKey.Bytes())
+		schemePubKey, err := scheme.NewPublicKeyFromHexString(hexStr)
+		if err != nil {
+			t.Fatalf("Expected no error for valid hex, but got: %v", err)
+		}
+		if schemePubKey == nil {
+			t.Error("Expected non-nil public key")
+		}
+	})
+
+	t.Run("NewSignatureFromBytes_ValidData", func(t *testing.T) {
+		// Generate a valid signature first
+		privKey, _, err := GenerateKeyPair()
+		if err != nil {
+			t.Fatalf("Failed to generate key pair: %v", err)
+		}
+
+		sig, err := privKey.Sign([]byte("test"))
+		if err != nil {
+			t.Fatalf("Failed to sign: %v", err)
+		}
+
+		data := sig.Bytes()
+		schemeSig, err := scheme.NewSignatureFromBytes(data)
+		if err != nil {
+			t.Fatalf("Expected no error for valid data, but got: %v", err)
+		}
+		if schemeSig == nil {
+			t.Error("Expected non-nil signature")
+		}
+	})
+
+	t.Run("PrivateKeyAdapter_Public", func(t *testing.T) {
+		privKey, _, err := scheme.GenerateKeyPair()
+		if err != nil {
+			t.Fatalf("Failed to generate key pair: %v", err)
+		}
+
+		pubKey := privKey.Public()
+		if pubKey == nil {
+			t.Error("Expected non-nil public key")
+		}
+	})
+
+	t.Run("PublicKeyAdapter_Bytes", func(t *testing.T) {
+		_, pubKey, err := scheme.GenerateKeyPair()
+		if err != nil {
+			t.Fatalf("Failed to generate key pair: %v", err)
+		}
+
+		bytes := pubKey.Bytes()
+		if bytes == nil {
+			t.Error("Expected non-nil bytes")
+		}
+	})
+
+	t.Run("SignatureAdapter_Bytes", func(t *testing.T) {
+		privKey, _, err := scheme.GenerateKeyPair()
+		if err != nil {
+			t.Fatalf("Failed to generate key pair: %v", err)
+		}
+
+		sig, err := privKey.Sign([]byte("test"))
+		if err != nil {
+			t.Fatalf("Failed to sign: %v", err)
+		}
+
+		bytes := sig.Bytes()
+		if bytes == nil {
+			t.Error("Expected non-nil bytes")
+		}
+	})
+
+	t.Run("SignatureAdapter_VerifyWithRawPublicKey", func(t *testing.T) {
+		privKey, pubKey, err := scheme.GenerateKeyPair()
+		if err != nil {
+			t.Fatalf("Failed to generate key pair: %v", err)
+		}
+
+		sig, err := privKey.Sign([]byte("test"))
+		if err != nil {
+			t.Fatalf("Failed to sign: %v", err)
+		}
+
+		// Extract raw public key
+		adapter := pubKey.(*publicKeyAdapter)
+		rawPubKey := adapter.pk
+
+		// Verify with raw public key
+		valid, err := sig.Verify(rawPubKey, []byte("test"))
+		if err != nil {
+			t.Fatalf("Expected no error for verification, but got: %v", err)
+		}
+		if !valid {
+			t.Error("Expected valid signature")
+		}
+	})
+
+	t.Run("PrivateKeyAdapter_UnwrapPrivateKey", func(t *testing.T) {
+		privKey, _, err := scheme.GenerateKeyPair()
+		if err != nil {
+			t.Fatalf("Failed to generate key pair: %v", err)
+		}
+
+		adapter := privKey.(*privateKeyAdapter)
+		rawPrivKey := adapter.UnwrapPrivateKey()
+		if rawPrivKey == nil {
+			t.Error("Expected non-nil unwrapped private key")
+		}
+	})
+}
+
+// TestErrorPaths tests error handling paths that might not be covered
+func TestErrorPaths(t *testing.T) {
+	t.Run("hashToG1_ErrorHandling", func(t *testing.T) {
+		// Test that hashToG1 properly handles errors (this tests the error case)
+		// We can't easily trigger the error case, but we can test normal operation
+		point, err := hashToG1([]byte("test message"))
+		if err != nil {
+			t.Errorf("Expected no error, but got: %v", err)
+		}
+		if point == nil {
+			t.Error("Expected non-nil point")
+		}
+	})
+
+	t.Run("SolidityHashToG1_EdgeCases", func(t *testing.T) {
+		// Test various edge cases for SolidityHashToG1
+		testCases := []struct {
+			name string
+			hash [32]byte
+		}{
+			{"AllZeros", [32]byte{}},
+			{"AllOnes", func() [32]byte {
+				var h [32]byte
+				for i := range h {
+					h[i] = 0xFF
+				}
+				return h
+			}()},
+			{"Pattern", func() [32]byte {
+				var h [32]byte
+				for i := range h {
+					h[i] = byte(i * 7 % 256)
+				}
+				return h
+			}()},
+		}
+
+		for _, tc := range testCases {
+			t.Run(tc.name, func(t *testing.T) {
+				point, err := SolidityHashToG1(tc.hash)
+				if err != nil {
+					t.Errorf("Expected no error for %s, but got: %v", tc.name, err)
+				}
+				if point == nil {
+					t.Errorf("Expected non-nil point for %s", tc.name)
+				}
+			})
+		}
+	})
+}
+
+// TestSchemeAdapterMethods_DetailedCoverage tests scheme adapter methods with comprehensive coverage
+func TestSchemeAdapterMethods_DetailedCoverage(t *testing.T) {
+	scheme := NewScheme()
+
+	t.Run("AggregateSignatures_InvalidSignatureType", func(t *testing.T) {
+		// Create a fake signature that doesn't implement our interface properly
+		fakeSignature := &fakeSignature{}
+
+		_, err := scheme.AggregateSignatures([]signing.Signature{fakeSignature})
+		if err == nil {
+			t.Error("Expected error for invalid signature type, but got none")
+		}
+		if !strings.Contains(err.Error(), "invalid signature type") {
+			t.Errorf("Expected invalid signature type error, got: %v", err)
+		}
+	})
+
+	t.Run("AggregateSignatures_NilSignatureInAdapter", func(t *testing.T) {
+		// Create a signature adapter with nil signature
+		nilSigAdapter := &signatureAdapter{sig: nil}
+
+		_, err := scheme.AggregateSignatures([]signing.Signature{nilSigAdapter})
+		if err == nil {
+			t.Error("Expected error for nil signature in adapter, but got none")
+		}
+		if !strings.Contains(err.Error(), "cannot be nil") {
+			t.Errorf("Expected nil signature error, got: %v", err)
+		}
+	})
+
+	t.Run("AggregateSignatures_ValidSignatures", func(t *testing.T) {
+		// Generate valid signatures
+		privKey1, _, err := scheme.GenerateKeyPair()
+		if err != nil {
+			t.Fatalf("Failed to generate key pair 1: %v", err)
+		}
+		privKey2, _, err := scheme.GenerateKeyPair()
+		if err != nil {
+			t.Fatalf("Failed to generate key pair 2: %v", err)
+		}
+
+		message := []byte("test message")
+		sig1, err := privKey1.Sign(message)
+		if err != nil {
+			t.Fatalf("Failed to sign with key 1: %v", err)
+		}
+		sig2, err := privKey2.Sign(message)
+		if err != nil {
+			t.Fatalf("Failed to sign with key 2: %v", err)
+		}
+
+		aggSig, err := scheme.AggregateSignatures([]signing.Signature{sig1, sig2})
+		if err != nil {
+			t.Fatalf("Expected no error for valid signatures, but got: %v", err)
+		}
+		if aggSig == nil {
+			t.Error("Expected non-nil aggregated signature")
+		}
+	})
+
+	t.Run("BatchVerify_InvalidPublicKeyType", func(t *testing.T) {
+		// Create a fake public key that doesn't implement our interface properly
+		fakePublicKey := &fakePublicKey{}
+		fakeSignature := &fakeSignature{}
+
+		_, err := scheme.BatchVerify([]signing.PublicKey{fakePublicKey}, []byte("test"), []signing.Signature{fakeSignature})
+		if err == nil {
+			t.Error("Expected error for invalid public key type, but got none")
+		}
+		if !strings.Contains(err.Error(), "invalid public key type") {
+			t.Errorf("Expected invalid public key type error, got: %v", err)
+		}
+	})
+
+	t.Run("BatchVerify_NilPublicKeyInAdapter", func(t *testing.T) {
+		// Create a public key adapter with nil public key
+		nilPubKeyAdapter := &publicKeyAdapter{pk: nil}
+		fakeSignature := &fakeSignature{}
+
+		_, err := scheme.BatchVerify([]signing.PublicKey{nilPubKeyAdapter}, []byte("test"), []signing.Signature{fakeSignature})
+		if err == nil {
+			t.Error("Expected error for nil public key in adapter, but got none")
+		}
+		if !strings.Contains(err.Error(), "cannot be nil") {
+			t.Errorf("Expected nil public key error, got: %v", err)
+		}
+	})
+
+	t.Run("BatchVerify_InvalidSignatureType", func(t *testing.T) {
+		_, pubKey, err := scheme.GenerateKeyPair()
+		if err != nil {
+			t.Fatalf("Failed to generate key pair: %v", err)
+		}
+
+		// Create a fake signature that doesn't implement our interface properly
+		fakeSignature := &fakeSignature{}
+
+		_, err = scheme.BatchVerify([]signing.PublicKey{pubKey}, []byte("test"), []signing.Signature{fakeSignature})
+		if err == nil {
+			t.Error("Expected error for invalid signature type, but got none")
+		}
+		if !strings.Contains(err.Error(), "invalid signature type") {
+			t.Errorf("Expected invalid signature type error, got: %v", err)
+		}
+	})
+
+	t.Run("BatchVerify_NilSignatureInAdapter", func(t *testing.T) {
+		_, pubKey, err := scheme.GenerateKeyPair()
+		if err != nil {
+			t.Fatalf("Failed to generate key pair: %v", err)
+		}
+
+		// Create a signature adapter with nil signature
+		nilSigAdapter := &signatureAdapter{sig: nil}
+
+		_, err = scheme.BatchVerify([]signing.PublicKey{pubKey}, []byte("test"), []signing.Signature{nilSigAdapter})
+		if err == nil {
+			t.Error("Expected error for nil signature in adapter, but got none")
+		}
+		if !strings.Contains(err.Error(), "cannot be nil") {
+			t.Errorf("Expected nil signature error, got: %v", err)
+		}
+	})
+
+	t.Run("BatchVerify_ValidBatch", func(t *testing.T) {
+		// Generate valid key pairs and signatures
+		privKey1, pubKey1, err := scheme.GenerateKeyPair()
+		if err != nil {
+			t.Fatalf("Failed to generate key pair 1: %v", err)
+		}
+		privKey2, pubKey2, err := scheme.GenerateKeyPair()
+		if err != nil {
+			t.Fatalf("Failed to generate key pair 2: %v", err)
+		}
+
+		message := []byte("test message")
+		sig1, err := privKey1.Sign(message)
+		if err != nil {
+			t.Fatalf("Failed to sign with key 1: %v", err)
+		}
+		sig2, err := privKey2.Sign(message)
+		if err != nil {
+			t.Fatalf("Failed to sign with key 2: %v", err)
+		}
+
+		valid, err := scheme.BatchVerify([]signing.PublicKey{pubKey1, pubKey2}, message, []signing.Signature{sig1, sig2})
+		if err != nil {
+			t.Fatalf("Expected no error for valid batch, but got: %v", err)
+		}
+		if !valid {
+			t.Error("Expected valid batch verification")
+		}
+	})
+
+	t.Run("AggregateVerify_InvalidPublicKeyType", func(t *testing.T) {
+		// Create a fake public key that doesn't implement our interface properly
+		fakePublicKey := &fakePublicKey{}
+		fakeSignature := &fakeSignature{}
+
+		_, err := scheme.AggregateVerify([]signing.PublicKey{fakePublicKey}, [][]byte{[]byte("test")}, fakeSignature)
+		if err == nil {
+			t.Error("Expected error for invalid public key type, but got none")
+		}
+		if !strings.Contains(err.Error(), "invalid public key type") {
+			t.Errorf("Expected invalid public key type error, got: %v", err)
+		}
+	})
+
+	t.Run("AggregateVerify_NilPublicKeyInAdapter", func(t *testing.T) {
+		// Create a public key adapter with nil public key
+		nilPubKeyAdapter := &publicKeyAdapter{pk: nil}
+
+		_, err := scheme.AggregateVerify([]signing.PublicKey{nilPubKeyAdapter}, [][]byte{[]byte("test")}, nil)
+		if err == nil {
+			t.Error("Expected error for nil public key in adapter, but got none")
+		}
+		if !strings.Contains(err.Error(), "cannot be nil") {
+			t.Errorf("Expected nil public key error, got: %v", err)
+		}
+	})
+
+	t.Run("AggregateVerify_InvalidSignatureType", func(t *testing.T) {
+		_, pubKey, err := scheme.GenerateKeyPair()
+		if err != nil {
+			t.Fatalf("Failed to generate key pair: %v", err)
+		}
+
+		// Create a fake signature that doesn't implement our interface properly
+		fakeSignature := &fakeSignature{}
+
+		_, err = scheme.AggregateVerify([]signing.PublicKey{pubKey}, [][]byte{[]byte("test")}, fakeSignature)
+		if err == nil {
+			t.Error("Expected error for invalid signature type, but got none")
+		}
+		if !strings.Contains(err.Error(), "invalid signature type") {
+			t.Errorf("Expected invalid signature type error, got: %v", err)
+		}
+	})
+
+	t.Run("AggregateVerify_NilSignatureInAdapter", func(t *testing.T) {
+		_, pubKey, err := scheme.GenerateKeyPair()
+		if err != nil {
+			t.Fatalf("Failed to generate key pair: %v", err)
+		}
+
+		// Create a signature adapter with nil signature
+		nilSigAdapter := &signatureAdapter{sig: nil}
+
+		_, err = scheme.AggregateVerify([]signing.PublicKey{pubKey}, [][]byte{[]byte("test")}, nilSigAdapter)
+		if err == nil {
+			t.Error("Expected error for nil signature in adapter, but got none")
+		}
+		if !strings.Contains(err.Error(), "cannot be nil") {
+			t.Errorf("Expected nil signature error, got: %v", err)
+		}
+	})
+
+	t.Run("AggregateVerify_ValidAggregateVerification", func(t *testing.T) {
+		// Generate valid key pairs and signatures
+		privKey1, pubKey1, err := scheme.GenerateKeyPair()
+		if err != nil {
+			t.Fatalf("Failed to generate key pair 1: %v", err)
+		}
+		privKey2, pubKey2, err := scheme.GenerateKeyPair()
+		if err != nil {
+			t.Fatalf("Failed to generate key pair 2: %v", err)
+		}
+
+		message1 := []byte("test message 1")
+		message2 := []byte("test message 2")
+		sig1, err := privKey1.Sign(message1)
+		if err != nil {
+			t.Fatalf("Failed to sign with key 1: %v", err)
+		}
+		sig2, err := privKey2.Sign(message2)
+		if err != nil {
+			t.Fatalf("Failed to sign with key 2: %v", err)
+		}
+
+		// Aggregate signatures
+		aggSig, err := scheme.AggregateSignatures([]signing.Signature{sig1, sig2})
+		if err != nil {
+			t.Fatalf("Failed to aggregate signatures: %v", err)
+		}
+
+		valid, err := scheme.AggregateVerify([]signing.PublicKey{pubKey1, pubKey2}, [][]byte{message1, message2}, aggSig)
+		if err != nil {
+			t.Fatalf("Expected no error for valid aggregate verification, but got: %v", err)
+		}
+		if !valid {
+			t.Error("Expected valid aggregate verification")
+		}
+	})
+
+	t.Run("SignatureAdapter_VerifyWithInvalidPublicKeyType", func(t *testing.T) {
+		privKey, _, err := scheme.GenerateKeyPair()
+		if err != nil {
+			t.Fatalf("Failed to generate key pair: %v", err)
+		}
+
+		sig, err := privKey.Sign([]byte("test"))
+		if err != nil {
+			t.Fatalf("Failed to sign: %v", err)
+		}
+
+		// Create a fake public key that doesn't implement our interface properly
+		fakePublicKey := &fakePublicKey{}
+
+		_, err = sig.Verify(fakePublicKey, []byte("test"))
+		if err == nil {
+			t.Error("Expected error for invalid public key type, but got none")
+		}
+		if !strings.Contains(err.Error(), "invalid public key type") {
+			t.Errorf("Expected invalid public key type error, got: %v", err)
+		}
+	})
+
+	t.Run("SignatureAdapter_VerifyWithNilPublicKeyInAdapter", func(t *testing.T) {
+		privKey, _, err := scheme.GenerateKeyPair()
+		if err != nil {
+			t.Fatalf("Failed to generate key pair: %v", err)
+		}
+
+		sig, err := privKey.Sign([]byte("test"))
+		if err != nil {
+			t.Fatalf("Failed to sign: %v", err)
+		}
+
+		// Create a public key adapter with nil public key
+		nilPubKeyAdapter := &publicKeyAdapter{pk: nil}
+
+		_, err = sig.Verify(nilPubKeyAdapter, []byte("test"))
+		if err == nil {
+			t.Error("Expected error for nil public key in adapter, but got none")
+		}
+		if !strings.Contains(err.Error(), "cannot be nil") {
+			t.Errorf("Expected nil public key error, got: %v", err)
+		}
+	})
+}
+
+// Fake types for testing error conditions
+type fakeSignature struct{}
+
+func (f *fakeSignature) Verify(publicKey signing.PublicKey, message []byte) (bool, error) {
+	return false, nil
+}
+func (f *fakeSignature) Bytes() []byte {
+	return nil
+}
+
+type fakePublicKey struct{}
+
+func (f *fakePublicKey) Bytes() []byte {
+	return nil
+}
+
+// TestAdditionalErrorCases tests additional error cases for better coverage
+func TestAdditionalErrorCases(t *testing.T) {
+	t.Run("NewPublicKeyFromSolidity_ErrorCases", func(t *testing.T) {
+		// Test error cases for NewPublicKeyFromSolidity that might not be covered
+		g1Point := &SolidityBN254G1Point{
+			X: big.NewInt(0),
+			Y: big.NewInt(1), // This is not a valid point for G1
+		}
+		g2Point := &SolidityBN254G2Point{
+			X: [2]*big.Int{big.NewInt(0), big.NewInt(0)},
+			Y: [2]*big.Int{big.NewInt(1), big.NewInt(0)}, // This is not a valid point for G2
+		}
+
+		// This should fail for invalid points
+		_, err := NewPublicKeyFromSolidity(g1Point, g2Point)
+		if err == nil {
+			t.Error("Expected error for invalid points, but got none")
+		}
+	})
+
+	t.Run("BatchVerify_ErrorHandling", func(t *testing.T) {
+		// Test error handling in BatchVerify
+		privKey, pubKey, err := GenerateKeyPair()
+		if err != nil {
+			t.Fatalf("Failed to generate key pair: %v", err)
+		}
+
+		message := []byte("test message")
+		sig, err := privKey.Sign(message)
+		if err != nil {
+			t.Fatalf("Failed to sign: %v", err)
+		}
+
+		// Test with pairing error scenarios (though these are hard to trigger)
+		valid, err := BatchVerify([]*PublicKey{pubKey}, message, []*Signature{sig})
+		if err != nil {
+			t.Errorf("Expected no error for valid batch verify, but got: %v", err)
+		}
+		if !valid {
+			t.Error("Expected valid batch verification")
+		}
+	})
+
+	t.Run("AggregateVerify_ErrorHandling", func(t *testing.T) {
+		// Test error handling in AggregateVerify
+		privKey, pubKey, err := GenerateKeyPair()
+		if err != nil {
+			t.Fatalf("Failed to generate key pair: %v", err)
+		}
+
+		message := []byte("test message")
+		sig, err := privKey.Sign(message)
+		if err != nil {
+			t.Fatalf("Failed to sign: %v", err)
+		}
+
+		// Test with pairing error scenarios (though these are hard to trigger)
+		valid, err := AggregateVerify([]*PublicKey{pubKey}, [][]byte{message}, sig)
+		if err != nil {
+			t.Errorf("Expected no error for valid aggregate verify, but got: %v", err)
+		}
+		if !valid {
+			t.Error("Expected valid aggregate verification")
+		}
+	})
+
+	t.Run("Sign_ErrorHandling", func(t *testing.T) {
+		// Test error handling in Sign method
+		privKey, _, err := GenerateKeyPair()
+		if err != nil {
+			t.Fatalf("Failed to generate key pair: %v", err)
+		}
+
+		// Test with various message types
+		testMessages := [][]byte{
+			nil,
+			[]byte{},
+			[]byte("test"),
+			make([]byte, 1000), // Large message
+		}
+
+		for i, msg := range testMessages {
+			_, err := privKey.Sign(msg)
+			if err != nil {
+				t.Errorf("Expected no error for message %d, but got: %v", i, err)
+			}
+		}
+	})
+
+	t.Run("Verify_ErrorHandling", func(t *testing.T) {
+		// Test error handling in Verify method
+		privKey, pubKey, err := GenerateKeyPair()
+		if err != nil {
+			t.Fatalf("Failed to generate key pair: %v", err)
+		}
+
+		message := []byte("test message")
+		sig, err := privKey.Sign(message)
+		if err != nil {
+			t.Fatalf("Failed to sign: %v", err)
+		}
+
+		// Test with various message types
+		testMessages := [][]byte{
+			nil,
+			[]byte{},
+			[]byte("test"),
+			make([]byte, 1000), // Large message
+		}
+
+		for i, msg := range testMessages {
+			_, err := sig.Verify(pubKey, msg)
+			if err != nil {
+				t.Errorf("Expected no error for message %d, but got: %v", i, err)
+			}
 		}
 	})
 }
