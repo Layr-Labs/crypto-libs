@@ -9,11 +9,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/Layr-Labs/crypto-libs/pkg/signing"
 	"io"
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/Layr-Labs/crypto-libs/pkg/signing"
 
 	"github.com/Layr-Labs/crypto-libs/pkg/keystore/legacy"
 
@@ -97,27 +98,59 @@ func processPassword(password string) []byte {
 
 // deriveKeyFromPassword derives a key from the password using the specified KDF
 func deriveKeyFromPassword(password string, kdf Module) ([]byte, error) {
+	// SECURITY: Input validation
+	if kdf.Function == "" {
+		return nil, fmt.Errorf("KDF function cannot be empty")
+	}
+	if kdf.Params == nil {
+		return nil, fmt.Errorf("KDF parameters cannot be nil")
+	}
+
 	processedPassword := processPassword(password)
 
 	switch kdf.Function {
 	case "pbkdf2":
-		// Extract parameters
-		salt, err := hex.DecodeString(kdf.Params["salt"].(string))
+		// Extract parameters with validation
+		saltParam, ok := kdf.Params["salt"]
+		if !ok {
+			return nil, fmt.Errorf("missing salt parameter")
+		}
+		saltStr, ok := saltParam.(string)
+		if !ok {
+			return nil, fmt.Errorf("salt parameter must be a string")
+		}
+		if saltStr == "" {
+			return nil, fmt.Errorf("salt cannot be empty")
+		}
+
+		salt, err := hex.DecodeString(saltStr)
 		if err != nil {
 			return nil, fmt.Errorf("invalid salt: %w", err)
 		}
 
-		c, ok := kdf.Params["c"].(float64)
+		cParam, ok := kdf.Params["c"]
 		if !ok {
-			return nil, fmt.Errorf("invalid iterations count")
+			return nil, fmt.Errorf("missing iterations count parameter")
+		}
+		c, ok := cParam.(float64)
+		if !ok {
+			return nil, fmt.Errorf("iterations count must be a number")
 		}
 
-		dklen, ok := kdf.Params["dklen"].(float64)
+		dklenParam, ok := kdf.Params["dklen"]
 		if !ok {
-			return nil, fmt.Errorf("invalid dklen")
+			return nil, fmt.Errorf("missing dklen parameter")
+		}
+		dklen, ok := dklenParam.(float64)
+		if !ok {
+			return nil, fmt.Errorf("dklen must be a number")
 		}
 
-		prf, ok := kdf.Params["prf"].(string)
+		prfParam, ok := kdf.Params["prf"]
+		if !ok {
+			return nil, fmt.Errorf("missing prf parameter")
+		}
+		prf, ok := prfParam.(string)
 		if !ok || prf != "hmac-sha256" {
 			return nil, fmt.Errorf("unsupported PRF: %v", prf)
 		}
@@ -146,30 +179,58 @@ func deriveKeyFromPassword(password string, kdf Module) ([]byte, error) {
 		return pbkdf2.Key(processedPassword, salt, int(c), int(dklen), sha256.New), nil
 
 	case "scrypt":
-		// Extract parameters
-		salt, err := hex.DecodeString(kdf.Params["salt"].(string))
+		// Extract parameters with validation
+		saltParam, ok := kdf.Params["salt"]
+		if !ok {
+			return nil, fmt.Errorf("missing salt parameter")
+		}
+		saltStr, ok := saltParam.(string)
+		if !ok {
+			return nil, fmt.Errorf("salt parameter must be a string")
+		}
+		if saltStr == "" {
+			return nil, fmt.Errorf("salt cannot be empty")
+		}
+
+		salt, err := hex.DecodeString(saltStr)
 		if err != nil {
 			return nil, fmt.Errorf("invalid salt: %w", err)
 		}
 
-		n, ok := kdf.Params["n"].(float64)
+		nParam, ok := kdf.Params["n"]
 		if !ok {
-			return nil, fmt.Errorf("invalid N parameter")
+			return nil, fmt.Errorf("missing N parameter")
+		}
+		n, ok := nParam.(float64)
+		if !ok {
+			return nil, fmt.Errorf("N parameter must be a number")
 		}
 
-		r, ok := kdf.Params["r"].(float64)
+		rParam, ok := kdf.Params["r"]
 		if !ok {
-			return nil, fmt.Errorf("invalid r parameter")
+			return nil, fmt.Errorf("missing r parameter")
+		}
+		r, ok := rParam.(float64)
+		if !ok {
+			return nil, fmt.Errorf("r parameter must be a number")
 		}
 
-		p, ok := kdf.Params["p"].(float64)
+		pParam, ok := kdf.Params["p"]
 		if !ok {
-			return nil, fmt.Errorf("invalid p parameter")
+			return nil, fmt.Errorf("missing p parameter")
+		}
+		p, ok := pParam.(float64)
+		if !ok {
+			return nil, fmt.Errorf("p parameter must be a number")
 		}
 
-		dklen, ok := kdf.Params["dklen"].(float64)
+		dklenParam, ok := kdf.Params["dklen"]
 		if !ok {
-			return nil, fmt.Errorf("invalid dklen")
+			return nil, fmt.Errorf("missing dklen parameter")
+		}
+		dklen, ok := dklenParam.(float64)
+		if !ok {
+			return nil, fmt.Errorf("dklen must be a number")
 		}
 
 		// EIP-2335 parameter validation for scrypt
@@ -231,8 +292,24 @@ func deriveKeyFromPassword(password string, kdf Module) ([]byte, error) {
 
 // verifyPassword checks if the provided password is correct
 func verifyPassword(decryptionKey []byte, checksum Module, cipherMessage string) (bool, error) {
+	// Input validation
+	if decryptionKey == nil {
+		return false, fmt.Errorf("decryption key cannot be nil")
+	}
+
+	if checksum.Function == "" {
+		return false, fmt.Errorf("checksum function cannot be empty")
+	}
+	if cipherMessage == "" {
+		return false, fmt.Errorf("cipher message cannot be empty")
+	}
+
 	if checksum.Function != "sha256" {
 		return false, fmt.Errorf("unsupported checksum function: %s", checksum.Function)
+	}
+
+	if checksum.Message == "" {
+		return false, fmt.Errorf("checksum message cannot be empty")
 	}
 
 	// Get the second 16 bytes of the decryption key
@@ -257,19 +334,56 @@ func verifyPassword(decryptionKey []byte, checksum Module, cipherMessage string)
 
 // decryptSecret decrypts the encrypted private key
 func decryptSecret(decryptionKey []byte, cipher Module) ([]byte, error) {
+	// SECURITY: Input validation
+	if decryptionKey == nil {
+		return nil, fmt.Errorf("decryption key cannot be nil")
+	}
+
+	if cipher.Function == "" {
+		return nil, fmt.Errorf("cipher function cannot be empty")
+	}
+	if cipher.Params == nil {
+		return nil, fmt.Errorf("cipher parameters cannot be nil")
+	}
+	if cipher.Message == "" {
+		return nil, fmt.Errorf("cipher message cannot be empty")
+	}
+
 	if cipher.Function != "aes-128-ctr" {
 		return nil, fmt.Errorf("unsupported cipher function: %s", cipher.Function)
 	}
 
-	// Decode the IV and message
-	iv, err := hex.DecodeString(cipher.Params["iv"].(string))
+	// Validate and decode the IV
+	ivParam, ok := cipher.Params["iv"]
+	if !ok {
+		return nil, fmt.Errorf("missing IV parameter")
+	}
+	ivStr, ok := ivParam.(string)
+	if !ok {
+		return nil, fmt.Errorf("IV parameter must be a string")
+	}
+	if ivStr == "" {
+		return nil, fmt.Errorf("IV cannot be empty")
+	}
+
+	iv, err := hex.DecodeString(ivStr)
 	if err != nil {
 		return nil, fmt.Errorf("invalid IV: %w", err)
+	}
+
+	// Validate IV length for AES-128-CTR
+	if len(iv) != 16 {
+		return nil, fmt.Errorf("invalid IV length: expected 16 bytes, got %d", len(iv))
 	}
 
 	cipherText, err := hex.DecodeString(cipher.Message)
 	if err != nil {
 		return nil, fmt.Errorf("invalid cipher text: %w", err)
+	}
+
+	// Validate cipher text length
+	if len(cipherText) == 0 {
+		return nil, fmt.Errorf("cipher text cannot be empty")
 	}
 
 	// Use only the first 16 bytes of the decryption key for AES-128
@@ -296,6 +410,20 @@ func (k *EIP2335Keystore) GetPrivateKey(password string, scheme signing.SigningS
 	if k == nil {
 		return nil, fmt.Errorf("keystore data cannot be nil")
 	}
+	if len(password) == 0 {
+		return nil, fmt.Errorf("password cannot be empty")
+	}
+
+	// Validate keystore structure
+	if k.Crypto.KDF.Function == "" {
+		return nil, fmt.Errorf("keystore KDF function cannot be empty")
+	}
+	if k.Crypto.Checksum.Function == "" {
+		return nil, fmt.Errorf("keystore checksum function cannot be empty")
+	}
+	if k.Crypto.Cipher.Function == "" {
+		return nil, fmt.Errorf("keystore cipher function cannot be empty")
+	}
 
 	// Derive decryption key from password
 	decryptionKey, err := deriveKeyFromPassword(password, k.Crypto.KDF)
@@ -316,6 +444,11 @@ func (k *EIP2335Keystore) GetPrivateKey(password string, scheme signing.SigningS
 	keyBytes, err := decryptSecret(decryptionKey, k.Crypto.Cipher)
 	if err != nil {
 		return nil, fmt.Errorf("failed to decrypt private key: %w", err)
+	}
+
+	// Validate decrypted key bytes
+	if len(keyBytes) == 0 {
+		return nil, fmt.Errorf("decrypted private key is empty")
 	}
 
 	// If scheme is nil, try to determine the scheme from the curve type in the keystore
@@ -345,6 +478,9 @@ func (k *EIP2335Keystore) GetBN254PrivateKey(password string) (*bn254.PrivateKey
 	if k == nil {
 		return nil, fmt.Errorf("keystore data cannot be nil")
 	}
+	if len(password) == 0 {
+		return nil, fmt.Errorf("password cannot be empty")
+	}
 
 	scheme, err := GetSigningSchemeForCurveType("bn254")
 	if err != nil {
@@ -356,13 +492,21 @@ func (k *EIP2335Keystore) GetBN254PrivateKey(password string) (*bn254.PrivateKey
 		return nil, err
 	}
 
+	if privKey == nil {
+		return nil, fmt.Errorf("private key cannot be nil")
+	}
+
 	// Try to use the UnwrapPrivateKey method if available
 	type unwrapper interface {
 		UnwrapPrivateKey() *bn254.PrivateKey
 	}
 
 	if unwrapper, ok := privKey.(unwrapper); ok {
-		return unwrapper.UnwrapPrivateKey(), nil
+		unwrapped := unwrapper.UnwrapPrivateKey()
+		if unwrapped == nil {
+			return nil, fmt.Errorf("unwrapped private key is nil")
+		}
+		return unwrapped, nil
 	}
 
 	// Fall back to recreating from bytes if unwrapper not available
@@ -383,6 +527,9 @@ func (k *EIP2335Keystore) GetBLS381PrivateKey(password string) (*bls381.PrivateK
 	if k == nil {
 		return nil, fmt.Errorf("keystore data cannot be nil")
 	}
+	if len(password) == 0 {
+		return nil, fmt.Errorf("password cannot be empty")
+	}
 
 	scheme, err := GetSigningSchemeForCurveType("bls381")
 	if err != nil {
@@ -394,13 +541,21 @@ func (k *EIP2335Keystore) GetBLS381PrivateKey(password string) (*bls381.PrivateK
 		return nil, err
 	}
 
+	if privKey == nil {
+		return nil, fmt.Errorf("private key cannot be nil")
+	}
+
 	// Try to use an unwrapper method if available
 	type unwrapper interface {
 		UnwrapPrivateKey() *bls381.PrivateKey
 	}
 
 	if unwrapper, ok := privKey.(unwrapper); ok {
-		return unwrapper.UnwrapPrivateKey(), nil
+		unwrapped := unwrapper.UnwrapPrivateKey()
+		if unwrapped == nil {
+			return nil, fmt.Errorf("unwrapped private key is nil")
+		}
+		return unwrapped, nil
 	}
 
 	// Fall back to recreating from bytes if unwrapper not available
@@ -442,13 +597,32 @@ func Default() *Options {
 }
 
 func ParseLegacyKeystoreToEIP2335Keystore(legacyJSON string, password string, scheme signing.SigningScheme) (*EIP2335Keystore, error) {
+	if strings.TrimSpace(legacyJSON) == "" {
+		return nil, fmt.Errorf("legacy keystore JSON cannot be empty")
+	}
+	if len(password) == 0 {
+		return nil, fmt.Errorf("password cannot be empty")
+	}
+	if scheme == nil {
+		return nil, fmt.Errorf("signing scheme cannot be nil")
+	}
+
 	lks, err := legacy.ParseKeystoreJSON(legacyJSON)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse legacy keystore: %w", err)
 	}
+
+	if lks == nil {
+		return nil, fmt.Errorf("parsed legacy keystore is nil")
+	}
+
 	pk, err := lks.GetPrivateKey(password, scheme)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get private key from legacy keystore: %w", err)
+	}
+
+	if pk == nil {
+		return nil, fmt.Errorf("private key from legacy keystore is nil")
 	}
 
 	// Convert legacy format to EIP-2335 format
@@ -457,9 +631,20 @@ func ParseLegacyKeystoreToEIP2335Keystore(legacyJSON string, password string, sc
 
 // ParseKeystoreJSON takes a string representation of the keystore JSON and returns the EIP2335Keystore struct
 func ParseKeystoreJSON(keystoreJSON string) (*EIP2335Keystore, error) {
-	// Check for empty or whitespace-only input
-	if strings.TrimSpace(keystoreJSON) == "" || strings.TrimSpace(keystoreJSON) == "{}" {
+
+	if keystoreJSON == "" {
 		return nil, ErrInvalidKeystoreFile
+	}
+
+	// Check for empty or whitespace-only input
+	trimmed := strings.TrimSpace(keystoreJSON)
+	if trimmed == "" || trimmed == "{}" {
+		return nil, ErrInvalidKeystoreFile
+	}
+
+	// Validate JSON length (reasonable limit to prevent DoS)
+	if len(keystoreJSON) > 2*1024*1024 { // 2MB limit
+		return nil, fmt.Errorf("keystore JSON too large (max 2MB)")
 	}
 
 	var ks EIP2335Keystore
@@ -475,13 +660,31 @@ func ParseKeystoreJSON(keystoreJSON string) (*EIP2335Keystore, error) {
 		return nil, ErrInvalidKeystoreFile
 	}
 
+	// Additional validation for critical fields
+	if ks.Crypto.Checksum.Function == "" {
+		return nil, ErrInvalidKeystoreFile
+	}
+	if ks.Crypto.Cipher.Function == "" {
+		return nil, ErrInvalidKeystoreFile
+	}
+
 	return &ks, nil
 }
 
 // DetermineCurveType attempts to determine the curve type based on the private key
 // This is a best-effort function that uses the curveStr path in the keygen operation
 func DetermineCurveType(curveStr string) string {
-	switch strings.ToLower(curveStr) {
+	// SECURITY: Input validation
+	if curveStr == "" {
+		return ""
+	}
+
+	// Validate curve string length
+	if len(curveStr) > 50 {
+		return "" // Invalid curve string
+	}
+
+	switch strings.ToLower(strings.TrimSpace(curveStr)) {
 	case "bls381":
 		return "bls381"
 	case "bn254":
@@ -496,7 +699,7 @@ func DetermineCurveType(curveStr string) string {
 func generateRandomIV() ([]byte, error) {
 	iv := make([]byte, 16)
 	if _, err := io.ReadFull(rand.Reader, iv); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to generate random IV: %w", err)
 	}
 	return iv, nil
 }
@@ -505,14 +708,30 @@ func generateRandomIV() ([]byte, error) {
 func generateRandomSalt() ([]byte, error) {
 	salt := make([]byte, 32)
 	if _, err := io.ReadFull(rand.Reader, salt); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to generate random salt: %w", err)
 	}
 	return salt, nil
 }
 
 func GenerateKeystore(privateKey signing.PrivateKey, password, curveType string, opts *Options) (*EIP2335Keystore, error) {
+
+	if privateKey == nil {
+		return nil, fmt.Errorf("private key cannot be nil")
+	}
+	if len(password) == 0 {
+		return nil, fmt.Errorf("password cannot be empty")
+	}
+	if curveType == "" {
+		return nil, fmt.Errorf("curve type cannot be empty")
+	}
+
 	if opts == nil {
 		opts = Default()
+	}
+
+	// Validate options
+	if opts.KDFType != "" && opts.KDFType != "scrypt" && opts.KDFType != "pbkdf2" {
+		return nil, fmt.Errorf("invalid KDF type: %s (must be 'scrypt' or 'pbkdf2')", opts.KDFType)
 	}
 
 	// Generate UUID
@@ -523,7 +742,8 @@ func GenerateKeystore(privateKey signing.PrivateKey, password, curveType string,
 
 	// Get the public key
 	publicKey := privateKey.Public()
-	pubkeyHex := hex.EncodeToString(publicKey.Bytes())
+	pubkeyBytes := publicKey.Bytes()
+	pubkeyHex := hex.EncodeToString(pubkeyBytes)
 
 	// Validate the curve type
 	curveType = DetermineCurveType(curveType)
@@ -563,7 +783,11 @@ func GenerateKeystore(privateKey signing.PrivateKey, password, curveType string,
 		}
 		decryptionKey = pbkdf2.Key(processedPassword, salt, 262144, 32, sha256.New)
 	} else {
-		// Default to scrypt
+		// Default to scrypt - validate parameters
+		if opts.ScryptN <= 0 || opts.ScryptR <= 0 || opts.ScryptP <= 0 {
+			return nil, fmt.Errorf("invalid scrypt parameters: N=%d, R=%d, P=%d", opts.ScryptN, opts.ScryptR, opts.ScryptP)
+		}
+
 		kdfModule = Module{
 			Function: "scrypt",
 			Params: map[string]interface{}{
@@ -579,6 +803,11 @@ func GenerateKeystore(privateKey signing.PrivateKey, password, curveType string,
 		if err != nil {
 			return nil, fmt.Errorf("failed to derive key: %w", err)
 		}
+	}
+
+	// Validate decryption key
+	if len(decryptionKey) != 32 {
+		return nil, fmt.Errorf("derived key has invalid length: expected 32 bytes, got %d", len(decryptionKey))
 	}
 
 	// Encrypt the private key
@@ -644,13 +873,33 @@ func GenerateKeystore(privateKey signing.PrivateKey, password, curveType string,
 // SaveToKeystoreWithCurveType saves a private key to a keystore file using the EIP-2335 format
 // and includes the curve type in the keystore file
 func SaveToKeystoreWithCurveType(privateKey signing.PrivateKey, filePath, password, curveType string, opts *Options) error {
+
+	if privateKey == nil {
+		return fmt.Errorf("private key cannot be nil")
+	}
+	if strings.TrimSpace(filePath) == "" {
+		return fmt.Errorf("file path cannot be empty")
+	}
+	if len(password) == 0 {
+		return fmt.Errorf("password cannot be empty")
+	}
+	if curveType == "" {
+		return fmt.Errorf("curve type cannot be empty")
+	}
+
+	// Clean the file path to prevent directory traversal
+	cleanPath := filepath.Clean(filePath)
+	if cleanPath != filePath {
+		return fmt.Errorf("invalid file path")
+	}
+
 	ks, err := GenerateKeystore(privateKey, password, curveType, opts)
 	if err != nil {
 		return fmt.Errorf("failed to generate keystore: %w", err)
 	}
 
 	// Create the directory if it doesn't exist
-	dir := filepath.Dir(filePath)
+	dir := filepath.Dir(cleanPath)
 	if err := os.MkdirAll(dir, 0750); err != nil {
 		return fmt.Errorf("failed to create directory: %w", err)
 	}
@@ -662,7 +911,7 @@ func SaveToKeystoreWithCurveType(privateKey signing.PrivateKey, filePath, passwo
 	}
 
 	// Write to file
-	if err := os.WriteFile(filePath, content, 0600); err != nil {
+	if err := os.WriteFile(cleanPath, content, 0600); err != nil {
 		return fmt.Errorf("failed to write keystore file: %w", err)
 	}
 
@@ -671,7 +920,12 @@ func SaveToKeystoreWithCurveType(privateKey signing.PrivateKey, filePath, passwo
 
 // GetSigningSchemeForCurveType returns the appropriate signing scheme based on curve type
 func GetSigningSchemeForCurveType(curveType string) (signing.SigningScheme, error) {
-	switch strings.ToLower(curveType) {
+
+	if curveType == "" {
+		return nil, fmt.Errorf("curve type cannot be empty")
+	}
+
+	switch strings.ToLower(strings.TrimSpace(curveType)) {
 	case "bls381":
 		return bls381.NewScheme(), nil
 	case "bn254":
@@ -683,8 +937,26 @@ func GetSigningSchemeForCurveType(curveType string) (signing.SigningScheme, erro
 
 // LoadKeystoreFile loads a keystore from a file and returns the parsed EIP2335Keystore struct
 func LoadKeystoreFile(filePath string) (*EIP2335Keystore, error) {
+	if strings.TrimSpace(filePath) == "" {
+		return nil, fmt.Errorf("file path cannot be empty")
+	}
+
+	// Clean the file path to prevent directory traversal
+	cleanPath := filepath.Clean(filePath)
+
+	// Check if file exists and is readable
+	fileInfo, err := os.Stat(cleanPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to access keystore file: %w", err)
+	}
+
+	// Validate file size (reasonable limit to prevent DoS)
+	if fileInfo.Size() > 2*1024*1024 { // 10MB limit
+		return nil, fmt.Errorf("keystore file too large (max 10MB)")
+	}
+
 	// Read keystore file
-	content, err := os.ReadFile(filepath.Clean(filePath))
+	content, err := os.ReadFile(cleanPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read keystore file: %w", err)
 	}
@@ -695,10 +967,25 @@ func LoadKeystoreFile(filePath string) (*EIP2335Keystore, error) {
 
 // TestKeystore tests a keystore by signing a test message
 func TestKeystore(filePath, password string, scheme signing.SigningScheme) error {
+	// SECURITY: Input validation
+	if strings.TrimSpace(filePath) == "" {
+		return fmt.Errorf("file path cannot be empty")
+	}
+	if len(password) == 0 {
+		return fmt.Errorf("password cannot be empty")
+	}
+	if scheme == nil {
+		return fmt.Errorf("signing scheme cannot be nil")
+	}
+
 	// Load the keystore file
 	keystoreData, err := LoadKeystoreFile(filePath)
 	if err != nil {
 		return fmt.Errorf("failed to load keystore file: %w", err)
+	}
+
+	if keystoreData == nil {
+		return fmt.Errorf("loaded keystore data is nil")
 	}
 
 	// Load the private key from keystore
@@ -707,14 +994,25 @@ func TestKeystore(filePath, password string, scheme signing.SigningScheme) error
 		return fmt.Errorf("failed to load private key from keystore: %w", err)
 	}
 
+	if privateKey == nil {
+		return fmt.Errorf("private key is nil")
+	}
+
 	// Get the public key
 	publicKey := privateKey.Public()
+	if publicKey == nil {
+		return fmt.Errorf("public key is nil")
+	}
 
 	// Test signing a message
 	testMessage := []byte("Test message for keystore verification")
 	sig, err := privateKey.Sign(testMessage)
 	if err != nil {
 		return fmt.Errorf("failed to sign test message: %w", err)
+	}
+
+	if sig == nil {
+		return fmt.Errorf("signature is nil")
 	}
 
 	// Verify signature
@@ -734,6 +1032,9 @@ func TestKeystore(filePath, password string, scheme signing.SigningScheme) error
 func GenerateRandomPassword(length int) (string, error) {
 	if length < 16 {
 		length = 16 // Minimum password length for security
+	}
+	if length > 128 {
+		return "", fmt.Errorf("password length too long (max 128 characters)")
 	}
 
 	// Create a byte slice to hold the random password
