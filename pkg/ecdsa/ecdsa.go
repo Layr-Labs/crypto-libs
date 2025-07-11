@@ -139,6 +139,11 @@ func NewPrivateKeyFromBytes(data []byte) (*PrivateKey, error) {
 		return nil, fmt.Errorf("private key data cannot be empty")
 	}
 
+	// Validate private key length (should be exactly 32 bytes for secp256k1)
+	if len(data) != 32 {
+		return nil, fmt.Errorf("private key must be exactly 32 bytes, got %d", len(data))
+	}
+
 	d := new(big.Int).SetBytes(data)
 	if d.Sign() == 0 {
 		return nil, fmt.Errorf("private key cannot be zero")
@@ -168,16 +173,6 @@ func NewPrivateKeyFromHexString(hexStr string) (*PrivateKey, error) {
 
 // Sign signs a 32-byte hash using secp256k1 ECDSA
 func (pk *PrivateKey) Sign(hash []byte) (*Signature, error) {
-	// SECURITY: Comprehensive input validation
-	if pk == nil {
-		return nil, fmt.Errorf("private key cannot be nil")
-	}
-	if pk.D == nil {
-		return nil, fmt.Errorf("private key scalar cannot be nil")
-	}
-	if pk.D.Sign() == 0 {
-		return nil, fmt.Errorf("private key cannot be zero")
-	}
 	if hash == nil {
 		return nil, fmt.Errorf("hash cannot be nil")
 	}
@@ -185,7 +180,7 @@ func (pk *PrivateKey) Sign(hash []byte) (*Signature, error) {
 		return nil, fmt.Errorf("hash must be exactly 32 bytes, got %d", len(hash))
 	}
 
-	// SECURITY: Validate private key is within curve order
+	// Validate private key is within curve order
 	n := secp256k1.S256().Params().N
 	if pk.D.Cmp(n) >= 0 {
 		return nil, fmt.Errorf("private key exceeds curve order")
@@ -252,7 +247,13 @@ func (pk *PrivateKey) SignAndPack(hash [32]byte) ([]byte, error) {
 
 // Public returns the corresponding public key
 func (pk *PrivateKey) Public() *PublicKey {
-	x, y := secp256k1.S256().ScalarBaseMult(pk.D.Bytes())
+
+	// Use fixed-length byte representation to avoid timing attacks
+	privKeyBytes := make([]byte, 32)
+	dBytes := pk.D.Bytes()
+	copy(privKeyBytes[32-len(dBytes):], dBytes)
+
+	x, y := secp256k1.S256().ScalarBaseMult(privKeyBytes)
 	return &PublicKey{
 		X: x,
 		Y: y,
@@ -261,7 +262,11 @@ func (pk *PrivateKey) Public() *PublicKey {
 
 // Bytes serializes the private key to bytes
 func (pk *PrivateKey) Bytes() []byte {
-	return pk.D.Bytes()
+	// Always return exactly 32 bytes for secp256k1 private keys
+	result := make([]byte, 32)
+	dBytes := pk.D.Bytes()
+	copy(result[32-len(dBytes):], dBytes)
+	return result
 }
 
 func (pk *PrivateKey) DeriveAddress() (common.Address, error) {
@@ -323,12 +328,6 @@ func NewPublicKeyFromBytes(data []byte) (*PublicKey, error) {
 			return nil, fmt.Errorf("point is not on curve")
 		}
 
-		// Validate point is in correct subgroup (prevent small subgroup attacks)
-		// Check that n*P = O (point at infinity)
-		if !curve.IsOnCurve(x, y) {
-			return nil, fmt.Errorf("point is not in the correct cryptographic subgroup")
-		}
-
 		return &PublicKey{X: x, Y: y}, nil
 	}
 
@@ -356,12 +355,6 @@ func NewPublicKeyFromBytes(data []byte) (*PublicKey, error) {
 		if y.Sign() == 0 {
 			return nil, fmt.Errorf("decompressed y coordinate cannot be zero")
 		}
-
-		// Validate point is in correct subgroup
-		if !curve.IsOnCurve(x, y) {
-			return nil, fmt.Errorf("decompressed point is not in the correct cryptographic subgroup")
-		}
-
 		return &PublicKey{X: x, Y: y}, nil
 	}
 
@@ -406,14 +399,58 @@ func NewSignatureFromBytes(data []byte) (*Signature, error) {
 	s := new(big.Int).SetBytes(data[32:64])
 	v := data[64]
 
+	//Validate signature components
+	if r.Sign() == 0 {
+		return nil, fmt.Errorf("signature R component cannot be zero")
+	}
+	if s.Sign() == 0 {
+		return nil, fmt.Errorf("signature S component cannot be zero")
+	}
+
+	// Validate R and S are within curve order
+	n := secp256k1.S256().Params().N
+	if r.Cmp(n) >= 0 {
+		return nil, fmt.Errorf("signature R component exceeds curve order")
+	}
+	if s.Cmp(n) >= 0 {
+		return nil, fmt.Errorf("signature S component exceeds curve order")
+	}
+
+	// Check for signature malleability (high S values)
+	halfOrder := new(big.Int).Rsh(n, 1)
+	if s.Cmp(halfOrder) > 0 {
+		return nil, fmt.Errorf("signature S component too high (malleability risk)")
+	}
+
+	// Validate V value (should be 27 or 28 for Ethereum, or 0/1 for some implementations)
+	if v != 27 && v != 28 && v != 0 && v != 1 {
+		return nil, fmt.Errorf("invalid signature V value: %d", v)
+	}
+
 	return &Signature{R: r, S: s, V: v}, nil
 }
 
 // Verify verifies the signature against a 32-byte hash and public key
 func (sig *Signature) Verify(publicKey *PublicKey, hash [32]byte) (bool, error) {
+	// Input validation
+
+	if publicKey == nil {
+		return false, fmt.Errorf("public key cannot be nil")
+	}
+
+	if publicKey.X == nil || publicKey.Y == nil {
+		return false, fmt.Errorf("public key coordinates cannot be nil")
+	}
+
+	// Validate public key is on curve
+	curve := secp256k1.S256()
+	if !curve.IsOnCurve(publicKey.X, publicKey.Y) {
+		return false, fmt.Errorf("public key is not on curve")
+	}
+
 	// Create ecdsa.PublicKey for verification
 	ecdsaPubKey := &ecdsa.PublicKey{
-		Curve: secp256k1.S256(),
+		Curve: curve,
 		X:     publicKey.X,
 		Y:     publicKey.Y,
 	}
