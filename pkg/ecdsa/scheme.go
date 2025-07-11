@@ -2,6 +2,7 @@ package ecdsa
 
 import (
 	"crypto/sha256"
+	"fmt"
 
 	"github.com/Layr-Labs/crypto-libs/pkg/signing"
 )
@@ -96,12 +97,36 @@ func (s *Scheme) AggregateSignatures(signatures []signing.Signature) (signing.Si
 
 // BatchVerify verifies multiple signatures in a single batch operation
 func (s *Scheme) BatchVerify(publicKeys []signing.PublicKey, message []byte, signatures []signing.Signature) (bool, error) {
+	// SECURITY: Input validation
+	if publicKeys == nil {
+		return false, fmt.Errorf("public keys slice cannot be nil")
+	}
+	if signatures == nil {
+		return false, fmt.Errorf("signatures slice cannot be nil")
+	}
+	if message == nil {
+		return false, fmt.Errorf("message cannot be nil")
+	}
+	if len(publicKeys) == 0 {
+		return false, fmt.Errorf("public keys slice cannot be empty")
+	}
+	if len(signatures) == 0 {
+		return false, fmt.Errorf("signatures slice cannot be empty")
+	}
+
 	if len(publicKeys) != len(signatures) {
 		return false, signing.ErrInvalidSignatureType
 	}
 
 	// Verify each signature individually
 	for i, pubKey := range publicKeys {
+		if pubKey == nil {
+			return false, fmt.Errorf("public key at index %d cannot be nil", i)
+		}
+		if signatures[i] == nil {
+			return false, fmt.Errorf("signature at index %d cannot be nil", i)
+		}
+
 		valid, err := signatures[i].Verify(pubKey, message)
 		if err != nil {
 			return false, err
@@ -129,6 +154,11 @@ type privateKeyAdapter struct {
 
 // Sign implements the signing.PrivateKey interface
 func (a *privateKeyAdapter) Sign(message []byte) (signing.Signature, error) {
+
+	if message == nil {
+		return nil, fmt.Errorf("message cannot be nil")
+	}
+
 	// Hash the message
 	hash := sha256.Sum256(message)
 
@@ -166,6 +196,14 @@ type signatureAdapter struct {
 
 // Verify implements the signing.Signature interface
 func (a *signatureAdapter) Verify(publicKey signing.PublicKey, message []byte) (bool, error) {
+
+	if publicKey == nil {
+		return false, fmt.Errorf("public key cannot be nil")
+	}
+	if message == nil {
+		return false, fmt.Errorf("message cannot be nil")
+	}
+
 	ecdsaPubKey, ok := publicKey.(*publicKeyAdapter)
 	if !ok {
 		return false, signing.ErrInvalidPublicKeyType
