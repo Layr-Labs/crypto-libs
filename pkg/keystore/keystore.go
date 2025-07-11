@@ -98,7 +98,6 @@ func processPassword(password string) []byte {
 
 // deriveKeyFromPassword derives a key from the password using the specified KDF
 func deriveKeyFromPassword(password string, kdf Module) ([]byte, error) {
-	// SECURITY: Input validation
 	if kdf.Function == "" {
 		return nil, fmt.Errorf("KDF function cannot be empty")
 	}
@@ -334,7 +333,6 @@ func verifyPassword(decryptionKey []byte, checksum Module, cipherMessage string)
 
 // decryptSecret decrypts the encrypted private key
 func decryptSecret(decryptionKey []byte, cipher Module) ([]byte, error) {
-	// SECURITY: Input validation
 	if decryptionKey == nil {
 		return nil, fmt.Errorf("decryption key cannot be nil")
 	}
@@ -674,7 +672,6 @@ func ParseKeystoreJSON(keystoreJSON string) (*EIP2335Keystore, error) {
 // DetermineCurveType attempts to determine the curve type based on the private key
 // This is a best-effort function that uses the curveStr path in the keygen operation
 func DetermineCurveType(curveStr string) string {
-	// SECURITY: Input validation
 	if curveStr == "" {
 		return ""
 	}
@@ -967,7 +964,6 @@ func LoadKeystoreFile(filePath string) (*EIP2335Keystore, error) {
 
 // TestKeystore tests a keystore by signing a test message
 func TestKeystore(filePath, password string, scheme signing.SigningScheme) error {
-	// SECURITY: Input validation
 	if strings.TrimSpace(filePath) == "" {
 		return fmt.Errorf("file path cannot be empty")
 	}
