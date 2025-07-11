@@ -3,8 +3,10 @@ package bn254
 import (
 	"bytes"
 	"math/big"
+	"strings"
 	"testing"
 
+	"github.com/Layr-Labs/crypto-libs/pkg/signing"
 	bn254 "github.com/consensys/gnark-crypto/ecc/bn254"
 )
 
@@ -720,6 +722,1396 @@ func TestPrecompileCompatibility(t *testing.T) {
 		invalid := ValidateFieldOrder(new(big.Int).Add(FieldModulus, big.NewInt(1)))
 		if invalid {
 			t.Error("Expected invalid field order for number larger than modulus")
+		}
+	})
+}
+
+// Additional input validation tests - testing edge cases and invalid inputs
+
+func TestInputValidation_GenerateKeyPairFromSeed(t *testing.T) {
+	t.Run("NilSeed", func(t *testing.T) {
+		_, _, err := GenerateKeyPairFromSeed(nil)
+		if err == nil {
+			t.Error("Expected error for nil seed, but got none")
+		}
+		if !strings.Contains(err.Error(), "32 bytes") {
+			t.Errorf("Expected error message about seed length, got: %v", err)
+		}
+	})
+
+	t.Run("EmptySeed", func(t *testing.T) {
+		_, _, err := GenerateKeyPairFromSeed([]byte{})
+		if err == nil {
+			t.Error("Expected error for empty seed, but got none")
+		}
+		if !strings.Contains(err.Error(), "32 bytes") {
+			t.Errorf("Expected error message about seed length, got: %v", err)
+		}
+	})
+
+	t.Run("ShortSeed", func(t *testing.T) {
+		shortSeed := []byte("short")
+		_, _, err := GenerateKeyPairFromSeed(shortSeed)
+		if err == nil {
+			t.Error("Expected error for short seed, but got none")
+		}
+		if !strings.Contains(err.Error(), "32 bytes") {
+			t.Errorf("Expected error message about seed length, got: %v", err)
+		}
+	})
+
+	t.Run("ExactlyMinimumSeed", func(t *testing.T) {
+		seed := make([]byte, 32)
+		for i := range seed {
+			seed[i] = byte(i)
+		}
+		_, _, err := GenerateKeyPairFromSeed(seed)
+		if err != nil {
+			t.Errorf("Expected no error for 32-byte seed, but got: %v", err)
+		}
+	})
+
+	t.Run("LargeSeed", func(t *testing.T) {
+		largeSeed := make([]byte, 1024)
+		for i := range largeSeed {
+			largeSeed[i] = byte(i % 256)
+		}
+		_, _, err := GenerateKeyPairFromSeed(largeSeed)
+		if err != nil {
+			t.Errorf("Expected no error for large seed, but got: %v", err)
+		}
+	})
+}
+
+func TestInputValidation_NewPrivateKeyFromBytes(t *testing.T) {
+	t.Run("NilData", func(t *testing.T) {
+		_, err := NewPrivateKeyFromBytes(nil)
+		if err != nil {
+			t.Errorf("Expected no error for nil data (should create zero key), but got: %v", err)
+		}
+	})
+
+	t.Run("EmptyData", func(t *testing.T) {
+		_, err := NewPrivateKeyFromBytes([]byte{})
+		if err != nil {
+			t.Errorf("Expected no error for empty data (should create zero key), but got: %v", err)
+		}
+	})
+
+	t.Run("SingleByte", func(t *testing.T) {
+		_, err := NewPrivateKeyFromBytes([]byte{0x01})
+		if err != nil {
+			t.Errorf("Expected no error for single byte, but got: %v", err)
+		}
+	})
+
+	t.Run("LargeData", func(t *testing.T) {
+		largeData := make([]byte, 1024)
+		for i := range largeData {
+			largeData[i] = byte(i % 256)
+		}
+		_, err := NewPrivateKeyFromBytes(largeData)
+		if err != nil {
+			t.Errorf("Expected no error for large data, but got: %v", err)
+		}
+	})
+
+	t.Run("AllZeros", func(t *testing.T) {
+		zeros := make([]byte, 32)
+		key, err := NewPrivateKeyFromBytes(zeros)
+		if err != nil {
+			t.Errorf("Expected no error for all zeros, but got: %v", err)
+		}
+		if key == nil {
+			t.Error("Expected non-nil key for all zeros")
+		}
+	})
+
+	t.Run("AllOnes", func(t *testing.T) {
+		ones := make([]byte, 32)
+		for i := range ones {
+			ones[i] = 0xFF
+		}
+		key, err := NewPrivateKeyFromBytes(ones)
+		if err != nil {
+			t.Errorf("Expected no error for all ones, but got: %v", err)
+		}
+		if key == nil {
+			t.Error("Expected non-nil key for all ones")
+		}
+	})
+}
+
+func TestInputValidation_NewPrivateKeyFromHexString(t *testing.T) {
+	t.Run("EmptyString", func(t *testing.T) {
+		_, err := NewPrivateKeyFromHexString("")
+		if err != nil {
+			t.Errorf("Expected no error for empty string (should create zero key), but got: %v", err)
+		}
+	})
+
+	t.Run("InvalidHex", func(t *testing.T) {
+		_, err := NewPrivateKeyFromHexString("invalid_hex_string")
+		if err == nil {
+			t.Error("Expected error for invalid hex string, but got none")
+		}
+	})
+
+	t.Run("InvalidCharacters", func(t *testing.T) {
+		_, err := NewPrivateKeyFromHexString("123g456h")
+		if err == nil {
+			t.Error("Expected error for hex string with invalid characters, but got none")
+		}
+	})
+
+	t.Run("OddLengthHex", func(t *testing.T) {
+		_, err := NewPrivateKeyFromHexString("123")
+		if err == nil {
+			t.Error("Expected error for odd-length hex string, but got none")
+		}
+	})
+
+	t.Run("WithPrefix", func(t *testing.T) {
+		_, err := NewPrivateKeyFromHexString("0x123456")
+		if err != nil {
+			t.Errorf("Expected no error for hex string with 0x prefix, but got: %v", err)
+		}
+	})
+
+	t.Run("WithoutPrefix", func(t *testing.T) {
+		_, err := NewPrivateKeyFromHexString("123456")
+		if err != nil {
+			t.Errorf("Expected no error for hex string without prefix, but got: %v", err)
+		}
+	})
+
+	t.Run("UppercaseHex", func(t *testing.T) {
+		_, err := NewPrivateKeyFromHexString("ABCDEF")
+		if err != nil {
+			t.Errorf("Expected no error for uppercase hex, but got: %v", err)
+		}
+	})
+
+	t.Run("MixedCaseHex", func(t *testing.T) {
+		_, err := NewPrivateKeyFromHexString("AbCdEf")
+		if err != nil {
+			t.Errorf("Expected no error for mixed case hex, but got: %v", err)
+		}
+	})
+
+	t.Run("VeryLongHex", func(t *testing.T) {
+		longHex := strings.Repeat("ab", 500) // 1000 character hex string
+		_, err := NewPrivateKeyFromHexString(longHex)
+		if err != nil {
+			t.Errorf("Expected no error for very long hex string, but got: %v", err)
+		}
+	})
+}
+
+func TestInputValidation_PrivateKeySign(t *testing.T) {
+	// Generate a valid private key for testing
+	privateKey, _, err := GenerateKeyPair()
+	if err != nil {
+		t.Fatalf("Failed to generate key pair for testing: %v", err)
+	}
+
+	t.Run("NilMessage", func(t *testing.T) {
+		_, err := privateKey.Sign(nil)
+		if err != nil {
+			t.Errorf("Expected no error for nil message, but got: %v", err)
+		}
+	})
+
+	t.Run("EmptyMessage", func(t *testing.T) {
+		_, err := privateKey.Sign([]byte{})
+		if err != nil {
+			t.Errorf("Expected no error for empty message, but got: %v", err)
+		}
+	})
+
+	t.Run("SingleByteMessage", func(t *testing.T) {
+		_, err := privateKey.Sign([]byte{0x01})
+		if err != nil {
+			t.Errorf("Expected no error for single byte message, but got: %v", err)
+		}
+	})
+
+	t.Run("LargeMessage", func(t *testing.T) {
+		largeMessage := make([]byte, 1024*1024) // 1MB message
+		for i := range largeMessage {
+			largeMessage[i] = byte(i % 256)
+		}
+		_, err := privateKey.Sign(largeMessage)
+		if err != nil {
+			t.Errorf("Expected no error for large message, but got: %v", err)
+		}
+	})
+
+	t.Run("VeryLargeMessage", func(t *testing.T) {
+		veryLargeMessage := make([]byte, 10*1024*1024) // 10MB message
+		for i := range veryLargeMessage {
+			veryLargeMessage[i] = byte(i % 256)
+		}
+		_, err := privateKey.Sign(veryLargeMessage)
+		if err != nil {
+			t.Errorf("Expected no error for very large message, but got: %v", err)
+		}
+	})
+
+	t.Run("BinaryMessage", func(t *testing.T) {
+		binaryMessage := []byte{0x00, 0xFF, 0x00, 0xFF, 0xAA, 0x55}
+		_, err := privateKey.Sign(binaryMessage)
+		if err != nil {
+			t.Errorf("Expected no error for binary message, but got: %v", err)
+		}
+	})
+}
+
+func TestInputValidation_SolidityCompatibleFunctions(t *testing.T) {
+	// Generate a valid private key for testing
+	privateKey, publicKey, err := GenerateKeyPair()
+	if err != nil {
+		t.Fatalf("Failed to generate key pair for testing: %v", err)
+	}
+
+	t.Run("SignSolidityCompatible_ZeroHash", func(t *testing.T) {
+		var zeroHash [32]byte
+		_, err := privateKey.SignSolidityCompatible(zeroHash)
+		if err != nil {
+			t.Errorf("Expected no error for zero hash, but got: %v", err)
+		}
+	})
+
+	t.Run("SignSolidityCompatible_RandomHash", func(t *testing.T) {
+		var randomHash [32]byte
+		for i := range randomHash {
+			randomHash[i] = byte(i)
+		}
+		_, err := privateKey.SignSolidityCompatible(randomHash)
+		if err != nil {
+			t.Errorf("Expected no error for random hash, but got: %v", err)
+		}
+	})
+
+	t.Run("SignSolidityCompatible_MaxHash", func(t *testing.T) {
+		var maxHash [32]byte
+		for i := range maxHash {
+			maxHash[i] = 0xFF
+		}
+		_, err := privateKey.SignSolidityCompatible(maxHash)
+		if err != nil {
+			t.Errorf("Expected no error for max hash, but got: %v", err)
+		}
+	})
+
+	t.Run("VerifySolidityCompatible", func(t *testing.T) {
+		var testHash [32]byte
+		for i := range testHash {
+			testHash[i] = byte(i % 256)
+		}
+
+		signature, err := privateKey.SignSolidityCompatible(testHash)
+		if err != nil {
+			t.Fatalf("Failed to generate signature: %v", err)
+		}
+
+		valid, err := signature.VerifySolidityCompatible(publicKey, testHash)
+		if err != nil {
+			t.Errorf("Expected no error for verification, but got: %v", err)
+		}
+		if !valid {
+			t.Error("Expected signature to be valid")
+		}
+	})
+
+	t.Run("BatchVerifySolidityCompatible_EmptySlices", func(t *testing.T) {
+		var testHash [32]byte
+		_, err := BatchVerifySolidityCompatible([]*PublicKey{}, testHash, []*Signature{})
+		if err == nil {
+			t.Error("Expected error for empty slices, but got none")
+		}
+	})
+
+	t.Run("BatchVerifySolidityCompatible_MismatchedLengths", func(t *testing.T) {
+		var testHash [32]byte
+		signature, err := privateKey.SignSolidityCompatible(testHash)
+		if err != nil {
+			t.Fatalf("Failed to generate signature: %v", err)
+		}
+
+		_, err = BatchVerifySolidityCompatible([]*PublicKey{publicKey, publicKey}, testHash, []*Signature{signature})
+		if err == nil {
+			t.Error("Expected error for mismatched lengths, but got none")
+		}
+	})
+}
+
+func TestInputValidation_NewPublicKeyFromBytes(t *testing.T) {
+	t.Run("NilData", func(t *testing.T) {
+		_, err := NewPublicKeyFromBytes(nil)
+		if err == nil {
+			t.Error("Expected error for nil data, but got none")
+		}
+	})
+
+	t.Run("EmptyData", func(t *testing.T) {
+		_, err := NewPublicKeyFromBytes([]byte{})
+		if err == nil {
+			t.Error("Expected error for empty data, but got none")
+		}
+	})
+
+	t.Run("InvalidLength", func(t *testing.T) {
+		invalidData := []byte{0x01, 0x02, 0x03}
+		_, err := NewPublicKeyFromBytes(invalidData)
+		if err == nil {
+			t.Error("Expected error for invalid length data, but got none")
+		}
+	})
+
+	t.Run("WrongFormatData", func(t *testing.T) {
+		wrongData := make([]byte, 96) // Correct length but invalid format
+		for i := range wrongData {
+			wrongData[i] = 0xFF
+		}
+		_, err := NewPublicKeyFromBytes(wrongData)
+		if err == nil {
+			t.Error("Expected error for wrong format data, but got none")
+		}
+	})
+
+	t.Run("G1PointLength", func(t *testing.T) {
+		// Test with G1 point length - all zeros might be valid (point at infinity)
+		// Use invalid data that's definitely not a valid G1 point
+		g1Data := make([]byte, 64)
+		for i := range g1Data {
+			g1Data[i] = 0xFF
+		}
+		_, err := NewPublicKeyFromBytes(g1Data)
+		if err == nil {
+			t.Error("Expected error for invalid G1 point data, but got none")
+		}
+	})
+
+	t.Run("G2PointLength", func(t *testing.T) {
+		// Test with G2 point length - all zeros is point at infinity and might be valid
+		g2Data := make([]byte, 128)
+		// Fill with invalid data that's definitely not a valid G2 point
+		for i := range g2Data {
+			g2Data[i] = 0xFF
+		}
+		_, err := NewPublicKeyFromBytes(g2Data)
+		if err == nil {
+			t.Error("Expected error for invalid G2 point data, but got none")
+		}
+	})
+}
+
+func TestInputValidation_NewPublicKeyFromHexString(t *testing.T) {
+	t.Run("EmptyString", func(t *testing.T) {
+		_, err := NewPublicKeyFromHexString("")
+		if err == nil {
+			t.Error("Expected error for empty string, but got none")
+		}
+	})
+
+	t.Run("InvalidHex", func(t *testing.T) {
+		_, err := NewPublicKeyFromHexString("invalid_hex")
+		if err == nil {
+			t.Error("Expected error for invalid hex string, but got none")
+		}
+	})
+
+	t.Run("OddLengthHex", func(t *testing.T) {
+		_, err := NewPublicKeyFromHexString("123")
+		if err == nil {
+			t.Error("Expected error for odd-length hex string, but got none")
+		}
+	})
+
+	t.Run("InvalidLength", func(t *testing.T) {
+		shortHex := "123456" // Too short for a public key
+		_, err := NewPublicKeyFromHexString(shortHex)
+		if err == nil {
+			t.Error("Expected error for hex string too short for public key, but got none")
+		}
+	})
+}
+
+func TestInputValidation_NewSignatureFromBytes(t *testing.T) {
+	t.Run("NilData", func(t *testing.T) {
+		_, err := NewSignatureFromBytes(nil)
+		if err == nil {
+			t.Error("Expected error for nil data, but got none")
+		}
+	})
+
+	t.Run("EmptyData", func(t *testing.T) {
+		_, err := NewSignatureFromBytes([]byte{})
+		if err == nil {
+			t.Error("Expected error for empty data, but got none")
+		}
+	})
+
+	t.Run("InvalidLength", func(t *testing.T) {
+		invalidData := []byte{0x01, 0x02, 0x03}
+		_, err := NewSignatureFromBytes(invalidData)
+		if err == nil {
+			t.Error("Expected error for invalid length data, but got none")
+		}
+	})
+
+	t.Run("WrongFormatData", func(t *testing.T) {
+		wrongData := make([]byte, 64) // Correct length but invalid format
+		for i := range wrongData {
+			wrongData[i] = 0xFF
+		}
+		_, err := NewSignatureFromBytes(wrongData)
+		if err == nil {
+			t.Error("Expected error for wrong format data, but got none")
+		}
+	})
+
+	t.Run("AllZeros", func(t *testing.T) {
+		// All zeros might be valid (point at infinity) for some curve implementations
+		// Use invalid data that's definitely not a valid signature
+		zeros := make([]byte, 64)
+		for i := range zeros {
+			zeros[i] = 0xFF
+		}
+		_, err := NewSignatureFromBytes(zeros)
+		if err == nil {
+			t.Error("Expected error for invalid signature data, but got none")
+		}
+	})
+}
+
+func TestInputValidation_SignatureVerify(t *testing.T) {
+	// Generate valid test data
+	privateKey, publicKey, err := GenerateKeyPair()
+	if err != nil {
+		t.Fatalf("Failed to generate key pair for testing: %v", err)
+	}
+	message := []byte("test message")
+	signature, err := privateKey.Sign(message)
+	if err != nil {
+		t.Fatalf("Failed to generate signature for testing: %v", err)
+	}
+
+	t.Run("NilPublicKey", func(t *testing.T) {
+		defer func() {
+			if r := recover(); r == nil {
+				t.Error("Expected panic for nil public key, but got none")
+			}
+		}()
+		_, _ = signature.Verify(nil, message)
+	})
+
+	t.Run("NilMessage", func(t *testing.T) {
+		_, err := signature.Verify(publicKey, nil)
+		if err != nil {
+			t.Errorf("Expected no error for nil message, but got: %v", err)
+		}
+	})
+
+	t.Run("EmptyMessage", func(t *testing.T) {
+		_, err := signature.Verify(publicKey, []byte{})
+		if err != nil {
+			t.Errorf("Expected no error for empty message, but got: %v", err)
+		}
+	})
+
+	t.Run("LargeMessage", func(t *testing.T) {
+		largeMessage := make([]byte, 1024*1024) // 1MB
+		for i := range largeMessage {
+			largeMessage[i] = byte(i % 256)
+		}
+		_, err := signature.Verify(publicKey, largeMessage)
+		if err != nil {
+			t.Errorf("Expected no error for large message, but got: %v", err)
+		}
+	})
+}
+
+func TestInputValidation_AggregateSignatures(t *testing.T) {
+	// Generate valid test data
+	privateKey, _, err := GenerateKeyPair()
+	if err != nil {
+		t.Fatalf("Failed to generate key pair for testing: %v", err)
+	}
+	message := []byte("test message")
+	signature, err := privateKey.Sign(message)
+	if err != nil {
+		t.Fatalf("Failed to generate signature for testing: %v", err)
+	}
+
+	t.Run("NilSignatures", func(t *testing.T) {
+		_, err := AggregateSignatures(nil)
+		if err == nil {
+			t.Error("Expected error for nil signatures slice, but got none")
+		}
+	})
+
+	t.Run("EmptySignatures", func(t *testing.T) {
+		_, err := AggregateSignatures([]*Signature{})
+		if err == nil {
+			t.Error("Expected error for empty signatures slice, but got none")
+		}
+	})
+
+	t.Run("NilSignatureInSlice", func(t *testing.T) {
+		signatures := []*Signature{signature, nil, signature}
+		defer func() {
+			if r := recover(); r == nil {
+				t.Error("Expected panic for nil signature in slice, but got none")
+			}
+		}()
+		_, _ = AggregateSignatures(signatures)
+	})
+
+	t.Run("SingleSignature", func(t *testing.T) {
+		signatures := []*Signature{signature}
+		_, err := AggregateSignatures(signatures)
+		if err != nil {
+			t.Errorf("Expected no error for single signature, but got: %v", err)
+		}
+	})
+
+	t.Run("ManySignatures", func(t *testing.T) {
+		signatures := make([]*Signature, 100)
+		for i := range signatures {
+			signatures[i] = signature
+		}
+		_, err := AggregateSignatures(signatures)
+		if err != nil {
+			t.Errorf("Expected no error for many signatures, but got: %v", err)
+		}
+	})
+}
+
+func TestInputValidation_BatchVerify(t *testing.T) {
+	// Generate valid test data
+	privateKey, publicKey, err := GenerateKeyPair()
+	if err != nil {
+		t.Fatalf("Failed to generate key pair for testing: %v", err)
+	}
+	message := []byte("test message")
+	signature, err := privateKey.Sign(message)
+	if err != nil {
+		t.Fatalf("Failed to generate signature for testing: %v", err)
+	}
+
+	t.Run("NilPublicKeys", func(t *testing.T) {
+		_, err := BatchVerify(nil, message, []*Signature{signature})
+		if err == nil {
+			t.Error("Expected error for nil public keys slice, but got none")
+		}
+	})
+
+	t.Run("NilMessage", func(t *testing.T) {
+		_, err := BatchVerify([]*PublicKey{publicKey}, nil, []*Signature{signature})
+		if err != nil {
+			t.Errorf("Expected no error for nil message, but got: %v", err)
+		}
+	})
+
+	t.Run("NilSignatures", func(t *testing.T) {
+		_, err := BatchVerify([]*PublicKey{publicKey}, message, nil)
+		if err == nil {
+			t.Error("Expected error for nil signatures slice, but got none")
+		}
+	})
+
+	t.Run("EmptyPublicKeys", func(t *testing.T) {
+		_, err := BatchVerify([]*PublicKey{}, message, []*Signature{})
+		if err == nil {
+			t.Error("Expected error for empty public keys slice, but got none")
+		}
+	})
+
+	t.Run("EmptySignatures", func(t *testing.T) {
+		_, err := BatchVerify([]*PublicKey{publicKey}, message, []*Signature{})
+		if err == nil {
+			t.Error("Expected error for empty signatures slice, but got none")
+		}
+	})
+
+	t.Run("MismatchedLengths", func(t *testing.T) {
+		_, err := BatchVerify([]*PublicKey{publicKey, publicKey}, message, []*Signature{signature})
+		if err == nil {
+			t.Error("Expected error for mismatched slice lengths, but got none")
+		}
+	})
+
+	t.Run("NilPublicKeyInSlice", func(t *testing.T) {
+		defer func() {
+			if r := recover(); r == nil {
+				t.Error("Expected panic for nil public key in slice, but got none")
+			}
+		}()
+		_, _ = BatchVerify([]*PublicKey{nil}, message, []*Signature{signature})
+	})
+
+	t.Run("NilSignatureInSlice", func(t *testing.T) {
+		defer func() {
+			if r := recover(); r == nil {
+				t.Error("Expected panic for nil signature in slice, but got none")
+			}
+		}()
+		_, _ = BatchVerify([]*PublicKey{publicKey}, message, []*Signature{nil})
+	})
+
+	t.Run("EmptyMessage", func(t *testing.T) {
+		_, err := BatchVerify([]*PublicKey{publicKey}, []byte{}, []*Signature{signature})
+		if err != nil {
+			t.Errorf("Expected no error for empty message, but got: %v", err)
+		}
+	})
+
+	t.Run("LargeMessage", func(t *testing.T) {
+		largeMessage := make([]byte, 1024*1024) // 1MB
+		for i := range largeMessage {
+			largeMessage[i] = byte(i % 256)
+		}
+		_, err := BatchVerify([]*PublicKey{publicKey}, largeMessage, []*Signature{signature})
+		if err != nil {
+			t.Errorf("Expected no error for large message, but got: %v", err)
+		}
+	})
+}
+
+func TestInputValidation_AggregateVerify(t *testing.T) {
+	// Generate valid test data
+	privateKey, publicKey, err := GenerateKeyPair()
+	if err != nil {
+		t.Fatalf("Failed to generate key pair for testing: %v", err)
+	}
+	message := []byte("test message")
+	signature, err := privateKey.Sign(message)
+	if err != nil {
+		t.Fatalf("Failed to generate signature for testing: %v", err)
+	}
+
+	t.Run("NilPublicKeys", func(t *testing.T) {
+		_, err := AggregateVerify(nil, [][]byte{message}, signature)
+		if err == nil {
+			t.Error("Expected error for nil public keys slice, but got none")
+		}
+	})
+
+	t.Run("NilMessages", func(t *testing.T) {
+		_, err := AggregateVerify([]*PublicKey{publicKey}, nil, signature)
+		if err == nil {
+			t.Error("Expected error for nil messages slice, but got none")
+		}
+	})
+
+	t.Run("NilSignature", func(t *testing.T) {
+		defer func() {
+			if r := recover(); r == nil {
+				t.Error("Expected panic for nil signature, but got none")
+			}
+		}()
+		_, _ = AggregateVerify([]*PublicKey{publicKey}, [][]byte{message}, nil)
+	})
+
+	t.Run("EmptyPublicKeys", func(t *testing.T) {
+		_, err := AggregateVerify([]*PublicKey{}, [][]byte{}, signature)
+		if err != nil {
+			t.Errorf("Expected no error for empty public keys slice, but got: %v", err)
+		}
+	})
+
+	t.Run("EmptyMessages", func(t *testing.T) {
+		_, err := AggregateVerify([]*PublicKey{publicKey}, [][]byte{}, signature)
+		if err == nil {
+			t.Error("Expected error for empty messages slice, but got none")
+		}
+	})
+
+	t.Run("MismatchedLengths", func(t *testing.T) {
+		_, err := AggregateVerify([]*PublicKey{publicKey, publicKey}, [][]byte{message}, signature)
+		if err == nil {
+			t.Error("Expected error for mismatched slice lengths, but got none")
+		}
+	})
+
+	t.Run("NilPublicKeyInSlice", func(t *testing.T) {
+		defer func() {
+			if r := recover(); r == nil {
+				t.Error("Expected panic for nil public key in slice, but got none")
+			}
+		}()
+		_, _ = AggregateVerify([]*PublicKey{nil}, [][]byte{message}, signature)
+	})
+
+	t.Run("NilMessageInSlice", func(t *testing.T) {
+		_, err := AggregateVerify([]*PublicKey{publicKey}, [][]byte{nil}, signature)
+		if err != nil {
+			t.Errorf("Expected no error for nil message in slice, but got: %v", err)
+		}
+	})
+
+	t.Run("EmptyMessageInSlice", func(t *testing.T) {
+		_, err := AggregateVerify([]*PublicKey{publicKey}, [][]byte{{}}, signature)
+		if err != nil {
+			t.Errorf("Expected no error for empty message in slice, but got: %v", err)
+		}
+	})
+
+	t.Run("MixedMessageLengths", func(t *testing.T) {
+		messages := [][]byte{
+			[]byte("short"),
+			make([]byte, 1024),
+			[]byte{},
+			[]byte("medium length message"),
+		}
+		// Fill the large message
+		for i := range messages[1] {
+			messages[1][i] = byte(i % 256)
+		}
+
+		publicKeys := make([]*PublicKey, len(messages))
+		for i := range publicKeys {
+			_, pk, err := GenerateKeyPair()
+			if err != nil {
+				t.Fatalf("Failed to generate key pair %d: %v", i, err)
+			}
+			publicKeys[i] = pk
+		}
+
+		_, err := AggregateVerify(publicKeys, messages, signature)
+		if err != nil {
+			t.Errorf("Expected no error for mixed message lengths, but got: %v", err)
+		}
+	})
+}
+
+func TestInputValidation_G1PointOperations(t *testing.T) {
+	t.Run("NewG1Point_NilInputs", func(t *testing.T) {
+		defer func() {
+			if r := recover(); r == nil {
+				t.Error("Expected panic for nil inputs, but got none")
+			}
+		}()
+		_ = NewG1Point(nil, nil)
+	})
+
+	t.Run("NewG1Point_ValidInputs", func(t *testing.T) {
+		x := big.NewInt(1)
+		y := big.NewInt(1)
+		point := NewG1Point(x, y)
+		if point == nil {
+			t.Error("Expected non-nil G1 point")
+		}
+	})
+
+	t.Run("G1Point_Add_NilInput", func(t *testing.T) {
+		point := NewZeroG1Point()
+		defer func() {
+			if r := recover(); r == nil {
+				t.Error("Expected panic for nil input to Add, but got none")
+			}
+		}()
+		_ = point.Add(nil)
+	})
+
+	t.Run("G1Point_Sub_NilInput", func(t *testing.T) {
+		point := NewZeroG1Point()
+		defer func() {
+			if r := recover(); r == nil {
+				t.Error("Expected panic for nil input to Sub, but got none")
+			}
+		}()
+		_ = point.Sub(nil)
+	})
+
+	t.Run("G1PointFromPrecompileFormat_NilData", func(t *testing.T) {
+		_, err := G1PointFromPrecompileFormat(nil)
+		if err == nil {
+			t.Error("Expected error for nil data, but got none")
+		}
+	})
+
+	t.Run("G1PointFromPrecompileFormat_InvalidLength", func(t *testing.T) {
+		data := make([]byte, 32) // Should be 64 bytes
+		_, err := G1PointFromPrecompileFormat(data)
+		if err == nil {
+			t.Error("Expected error for invalid length, but got none")
+		}
+	})
+
+	t.Run("G1PointFromPrecompileFormat_ValidLength", func(t *testing.T) {
+		// All zeros might be valid (point at infinity), use invalid data
+		data := make([]byte, G1PointSize) // 64 bytes
+		for i := range data {
+			data[i] = 0xFF
+		}
+		_, err := G1PointFromPrecompileFormat(data)
+		if err == nil {
+			t.Error("Expected error for invalid point data, but got none")
+		}
+	})
+
+	t.Run("G1Point_AddPublicKey_NilPublicKey", func(t *testing.T) {
+		point := NewZeroG1Point()
+		defer func() {
+			if r := recover(); r == nil {
+				t.Error("Expected panic for nil public key, but got none")
+			}
+		}()
+		_ = point.AddPublicKey(nil)
+	})
+}
+
+func TestInputValidation_G2PointOperations(t *testing.T) {
+	t.Run("NewG2Point_NilInputs", func(t *testing.T) {
+		defer func() {
+			if r := recover(); r == nil {
+				t.Error("Expected panic for nil inputs, but got none")
+			}
+		}()
+		_ = NewG2Point(nil, nil, nil, nil)
+	})
+
+	t.Run("NewG2Point_ValidInputs", func(t *testing.T) {
+		x0, x1, y0, y1 := big.NewInt(1), big.NewInt(1), big.NewInt(1), big.NewInt(1)
+		point := NewG2Point(x0, x1, y0, y1)
+		if point == nil {
+			t.Error("Expected non-nil G2 point")
+		}
+	})
+
+	t.Run("G2Point_Add_NilInput", func(t *testing.T) {
+		point := NewZeroG2Point()
+		defer func() {
+			if r := recover(); r == nil {
+				t.Error("Expected panic for nil input to Add, but got none")
+			}
+		}()
+		_ = point.Add(nil)
+	})
+
+	t.Run("G2Point_Sub_NilInput", func(t *testing.T) {
+		point := NewZeroG2Point()
+		defer func() {
+			if r := recover(); r == nil {
+				t.Error("Expected panic for nil input to Sub, but got none")
+			}
+		}()
+		_ = point.Sub(nil)
+	})
+
+	t.Run("G2PointFromPrecompileFormat_NilData", func(t *testing.T) {
+		_, err := G2PointFromPrecompileFormat(nil)
+		if err == nil {
+			t.Error("Expected error for nil data, but got none")
+		}
+	})
+
+	t.Run("G2PointFromPrecompileFormat_InvalidLength", func(t *testing.T) {
+		data := make([]byte, 64) // Should be 128 bytes
+		_, err := G2PointFromPrecompileFormat(data)
+		if err == nil {
+			t.Error("Expected error for invalid length, but got none")
+		}
+	})
+
+	t.Run("G2PointFromPrecompileFormat_ValidLength", func(t *testing.T) {
+		// All zeros might be valid (point at infinity), use invalid data
+		data := make([]byte, G2PointSize) // 128 bytes
+		for i := range data {
+			data[i] = 0xFF
+		}
+		_, err := G2PointFromPrecompileFormat(data)
+		if err == nil {
+			t.Error("Expected error for invalid point data, but got none")
+		}
+	})
+
+	t.Run("G2Point_AddPublicKey_NilPublicKey", func(t *testing.T) {
+		point := NewZeroG2Point()
+		defer func() {
+			if r := recover(); r == nil {
+				t.Error("Expected panic for nil public key, but got none")
+			}
+		}()
+		_ = point.AddPublicKey(nil)
+	})
+}
+
+func TestInputValidation_NewPublicKeyFromSolidity(t *testing.T) {
+	t.Run("NilG1Point", func(t *testing.T) {
+		g2 := &SolidityBN254G2Point{
+			X: [2]*big.Int{big.NewInt(1), big.NewInt(1)},
+			Y: [2]*big.Int{big.NewInt(1), big.NewInt(1)},
+		}
+		defer func() {
+			if r := recover(); r == nil {
+				t.Error("Expected panic for nil G1 point, but got none")
+			}
+		}()
+		_, _ = NewPublicKeyFromSolidity(nil, g2)
+	})
+
+	t.Run("NilG2Point", func(t *testing.T) {
+		// Use zero point (point at infinity) which should be in the subgroup
+		g1 := &SolidityBN254G1Point{X: big.NewInt(0), Y: big.NewInt(0)}
+		defer func() {
+			if r := recover(); r == nil {
+				t.Error("Expected panic for nil G2 point, but got none")
+			}
+		}()
+		_, _ = NewPublicKeyFromSolidity(g1, nil)
+	})
+
+	t.Run("BothNil", func(t *testing.T) {
+		defer func() {
+			if r := recover(); r == nil {
+				t.Error("Expected panic for both nil points, but got none")
+			}
+		}()
+		_, _ = NewPublicKeyFromSolidity(nil, nil)
+	})
+
+	t.Run("InvalidG1Point", func(t *testing.T) {
+		// Create invalid G1 point (not on curve)
+		g1 := &SolidityBN254G1Point{
+			X: big.NewInt(1),
+			Y: big.NewInt(2), // This will not be on the curve
+		}
+		g2 := &SolidityBN254G2Point{
+			X: [2]*big.Int{big.NewInt(0), big.NewInt(0)},
+			Y: [2]*big.Int{big.NewInt(1), big.NewInt(0)},
+		}
+		_, err := NewPublicKeyFromSolidity(g1, g2)
+		if err == nil {
+			t.Error("Expected error for invalid G1 point, but got none")
+		}
+	})
+
+	t.Run("InvalidG2Point", func(t *testing.T) {
+		// Start with zero G1 point (valid point at infinity)
+		g1 := &SolidityBN254G1Point{X: big.NewInt(0), Y: big.NewInt(0)}
+		// Create invalid G2 point
+		g2 := &SolidityBN254G2Point{
+			X: [2]*big.Int{big.NewInt(1), big.NewInt(1)},
+			Y: [2]*big.Int{big.NewInt(1), big.NewInt(1)}, // This will not be on the curve
+		}
+		_, err := NewPublicKeyFromSolidity(g1, g2)
+		if err == nil {
+			t.Error("Expected error for invalid G2 point, but got none")
+		}
+	})
+}
+
+func TestInputValidation_AggregatePublicKeys(t *testing.T) {
+	// Generate valid test data
+	_, publicKey, err := GenerateKeyPair()
+	if err != nil {
+		t.Fatalf("Failed to generate key pair for testing: %v", err)
+	}
+
+	t.Run("NilPublicKeys", func(t *testing.T) {
+		_, err := AggregatePublicKeys(nil)
+		if err == nil {
+			t.Error("Expected error for nil public keys slice, but got none")
+		}
+	})
+
+	t.Run("EmptyPublicKeys", func(t *testing.T) {
+		_, err := AggregatePublicKeys([]*PublicKey{})
+		if err == nil {
+			t.Error("Expected error for empty public keys slice, but got none")
+		}
+	})
+
+	t.Run("NilPublicKeyInSlice", func(t *testing.T) {
+		defer func() {
+			if r := recover(); r == nil {
+				t.Error("Expected panic for nil public key in slice, but got none")
+			}
+		}()
+		_, _ = AggregatePublicKeys([]*PublicKey{publicKey, nil, publicKey})
+	})
+
+	t.Run("SinglePublicKey", func(t *testing.T) {
+		_, err := AggregatePublicKeys([]*PublicKey{publicKey})
+		if err != nil {
+			t.Errorf("Expected no error for single public key, but got: %v", err)
+		}
+	})
+
+	t.Run("ManyPublicKeys", func(t *testing.T) {
+		publicKeys := make([]*PublicKey, 50)
+		for i := range publicKeys {
+			publicKeys[i] = publicKey
+		}
+		_, err := AggregatePublicKeys(publicKeys)
+		if err != nil {
+			t.Errorf("Expected no error for many public keys, but got: %v", err)
+		}
+	})
+}
+
+func TestInputValidation_PrivateKeyMethods(t *testing.T) {
+	t.Run("NilPrivateKeyBytes", func(t *testing.T) {
+		// Create a private key with nil scalar (edge case)
+		pk := &PrivateKey{ScalarBytes: nil, scalar: nil}
+		bytes := pk.Bytes()
+		if bytes != nil {
+			t.Error("Expected nil bytes for nil ScalarBytes, but got non-nil")
+		}
+	})
+
+	t.Run("EmptyPrivateKeyBytes", func(t *testing.T) {
+		pk := &PrivateKey{ScalarBytes: []byte{}, scalar: nil}
+		bytes := pk.Bytes()
+		if len(bytes) != 0 {
+			t.Error("Expected empty bytes for empty ScalarBytes")
+		}
+	})
+
+	t.Run("PrivateKeyToHexWithNilBytes", func(t *testing.T) {
+		pk := &PrivateKey{ScalarBytes: nil, scalar: nil}
+		hex, err := pk.ToHex()
+		if err != nil {
+			t.Errorf("Expected no error for ToHex with nil bytes, but got: %v", err)
+		}
+		if hex != "" {
+			t.Error("Expected empty hex string for nil bytes")
+		}
+	})
+
+	t.Run("PrivateKeyToHexWithEmptyBytes", func(t *testing.T) {
+		pk := &PrivateKey{ScalarBytes: []byte{}, scalar: nil}
+		hex, err := pk.ToHex()
+		if err != nil {
+			t.Errorf("Expected no error for ToHex with empty bytes, but got: %v", err)
+		}
+		if hex != "" {
+			t.Error("Expected empty hex string for empty bytes")
+		}
+	})
+
+	t.Run("SignG1Point_NilHashPoint", func(t *testing.T) {
+		privateKey, _, err := GenerateKeyPair()
+		if err != nil {
+			t.Fatalf("Failed to generate key pair: %v", err)
+		}
+
+		defer func() {
+			if r := recover(); r == nil {
+				t.Error("Expected panic for nil hash point, but got none")
+			}
+		}()
+		_, _ = privateKey.SignG1Point(nil)
+	})
+}
+
+func TestInputValidation_PublicKeyMethods(t *testing.T) {
+	t.Run("NilPublicKeyBytes", func(t *testing.T) {
+		pk := &PublicKey{PointBytes: nil, g1Point: nil, g2Point: nil}
+		bytes := pk.Bytes()
+		if bytes != nil {
+			t.Error("Expected nil bytes for nil PointBytes, but got non-nil")
+		}
+	})
+
+	t.Run("EmptyPublicKeyBytes", func(t *testing.T) {
+		pk := &PublicKey{PointBytes: []byte{}, g1Point: nil, g2Point: nil}
+		bytes := pk.Bytes()
+		if len(bytes) != 0 {
+			t.Error("Expected empty bytes for empty PointBytes")
+		}
+	})
+
+	t.Run("GetG1Point_Nil", func(t *testing.T) {
+		pk := &PublicKey{PointBytes: nil, g1Point: nil, g2Point: nil}
+		g1Point := pk.GetG1Point()
+		if g1Point != nil {
+			t.Error("Expected nil G1 point for nil g1Point")
+		}
+	})
+
+	t.Run("GetG2Point_Nil", func(t *testing.T) {
+		pk := &PublicKey{PointBytes: nil, g1Point: nil, g2Point: nil}
+		g2Point := pk.GetG2Point()
+		if g2Point != nil {
+			t.Error("Expected nil G2 point for nil g2Point")
+		}
+	})
+
+	t.Run("Sub_NilOther", func(t *testing.T) {
+		_, pk, err := GenerateKeyPair()
+		if err != nil {
+			t.Fatalf("Failed to generate key pair: %v", err)
+		}
+
+		// The Sub method gracefully handles nil by returning the original key
+		result := pk.Sub(nil)
+		if result != pk {
+			t.Error("Expected same public key when subtracting nil, but got different")
+		}
+	})
+}
+
+func TestInputValidation_SignatureMethods(t *testing.T) {
+	t.Run("NilSignatureBytes", func(t *testing.T) {
+		sig := &Signature{SigBytes: nil, sig: nil}
+		bytes := sig.Bytes()
+		if bytes != nil {
+			t.Error("Expected nil bytes for nil SigBytes, but got non-nil")
+		}
+	})
+
+	t.Run("EmptySignatureBytes", func(t *testing.T) {
+		sig := &Signature{SigBytes: []byte{}, sig: nil}
+		bytes := sig.Bytes()
+		if len(bytes) != 0 {
+			t.Error("Expected empty bytes for empty SigBytes")
+		}
+	})
+
+	t.Run("Add_NilSignature", func(t *testing.T) {
+		// Generate a valid signature for testing
+		privateKey, _, err := GenerateKeyPair()
+		if err != nil {
+			t.Fatalf("Failed to generate key pair: %v", err)
+		}
+		sig, err := privateKey.Sign([]byte("test"))
+		if err != nil {
+			t.Fatalf("Failed to generate signature: %v", err)
+		}
+
+		// Test adding nil signature
+		result := sig.Add(nil)
+		if result != sig {
+			t.Error("Expected same signature when adding nil")
+		}
+	})
+
+	t.Run("Add_SignatureWithNilSig", func(t *testing.T) {
+		// Generate a valid signature for testing
+		privateKey, _, err := GenerateKeyPair()
+		if err != nil {
+			t.Fatalf("Failed to generate key pair: %v", err)
+		}
+		sig, err := privateKey.Sign([]byte("test"))
+		if err != nil {
+			t.Fatalf("Failed to generate signature: %v", err)
+		}
+
+		// Create signature with nil sig field
+		nilSig := &Signature{SigBytes: []byte{}, sig: nil}
+		result := sig.Add(nilSig)
+		if result != sig {
+			t.Error("Expected same signature when adding signature with nil sig field")
+		}
+	})
+
+	t.Run("Sub_NilSignature", func(t *testing.T) {
+		// Generate a valid signature for testing
+		privateKey, _, err := GenerateKeyPair()
+		if err != nil {
+			t.Fatalf("Failed to generate key pair: %v", err)
+		}
+		sig, err := privateKey.Sign([]byte("test"))
+		if err != nil {
+			t.Fatalf("Failed to generate signature: %v", err)
+		}
+
+		// Test subtracting nil signature
+		result := sig.Sub(nil)
+		if result != sig {
+			t.Error("Expected same signature when subtracting nil")
+		}
+	})
+
+	t.Run("GetG1Point_Nil", func(t *testing.T) {
+		sig := &Signature{SigBytes: nil, sig: nil}
+		g1Point := sig.GetG1Point()
+		if g1Point != nil {
+			t.Error("Expected nil G1 point for nil sig")
+		}
+	})
+}
+
+func TestInputValidation_SchemeAdapterMethods(t *testing.T) {
+	scheme := NewScheme()
+
+	t.Run("SchemeAggregateSignatures_NilInput", func(t *testing.T) {
+		_, err := scheme.AggregateSignatures(nil)
+		if err == nil {
+			t.Error("Expected error for nil signatures slice, but got none")
+		}
+		if !strings.Contains(err.Error(), "cannot be nil") {
+			t.Errorf("Expected nil error message, got: %v", err)
+		}
+	})
+
+	t.Run("SchemeAggregateSignatures_EmptyInput", func(t *testing.T) {
+		_, err := scheme.AggregateSignatures([]signing.Signature{})
+		if err == nil {
+			t.Error("Expected error for empty signatures slice, but got none")
+		}
+		if !strings.Contains(err.Error(), "cannot be empty") {
+			t.Errorf("Expected empty error message, got: %v", err)
+		}
+	})
+
+	t.Run("SchemeBatchVerify_NilInputs", func(t *testing.T) {
+		message := []byte("test")
+
+		// Test nil public keys
+		_, err := scheme.BatchVerify(nil, message, []signing.Signature{})
+		if err == nil {
+			t.Error("Expected error for nil public keys, but got none")
+		}
+
+		// Test nil message
+		_, err = scheme.BatchVerify([]signing.PublicKey{}, nil, []signing.Signature{})
+		if err == nil {
+			t.Error("Expected error for nil message, but got none")
+		}
+
+		// Test nil signatures
+		_, err = scheme.BatchVerify([]signing.PublicKey{}, message, nil)
+		if err == nil {
+			t.Error("Expected error for nil signatures, but got none")
+		}
+	})
+
+	t.Run("SchemeAggregateVerify_NilInputs", func(t *testing.T) {
+		message := []byte("test")
+
+		// Test nil public keys
+		_, err := scheme.AggregateVerify(nil, [][]byte{message}, nil)
+		if err == nil {
+			t.Error("Expected error for nil public keys, but got none")
+		}
+
+		// Test nil messages
+		_, err = scheme.AggregateVerify([]signing.PublicKey{}, nil, nil)
+		if err == nil {
+			t.Error("Expected error for nil messages, but got none")
+		}
+
+		// Test nil signature
+		_, err = scheme.AggregateVerify([]signing.PublicKey{}, [][]byte{message}, nil)
+		if err == nil {
+			t.Error("Expected error for nil signature, but got none")
+		}
+	})
+
+	t.Run("PrivateKeyAdapter_NilMessage", func(t *testing.T) {
+		// Generate a key pair through the scheme
+		privKey, _, err := scheme.GenerateKeyPair()
+		if err != nil {
+			t.Fatalf("Failed to generate key pair: %v", err)
+		}
+
+		// Test signing with nil message
+		_, err = privKey.Sign(nil)
+		if err == nil {
+			t.Error("Expected error for nil message, but got none")
+		}
+		if !strings.Contains(err.Error(), "cannot be nil") {
+			t.Errorf("Expected nil error message, got: %v", err)
+		}
+	})
+
+	t.Run("SignatureAdapter_NilInputs", func(t *testing.T) {
+		// Generate a signature through the scheme
+		privKey, pubKey, err := scheme.GenerateKeyPair()
+		if err != nil {
+			t.Fatalf("Failed to generate key pair: %v", err)
+		}
+		sig, err := privKey.Sign([]byte("test"))
+		if err != nil {
+			t.Fatalf("Failed to generate signature: %v", err)
+		}
+
+		// Test verify with nil public key
+		_, err = sig.Verify(nil, []byte("test"))
+		if err == nil {
+			t.Error("Expected error for nil public key, but got none")
+		}
+
+		// Test verify with nil message
+		_, err = sig.Verify(pubKey, nil)
+		if err == nil {
+			t.Error("Expected error for nil message, but got none")
+		}
+	})
+
+	t.Run("SignatureAdapter_NilAdapter", func(t *testing.T) {
+		var nilAdapter *signatureAdapter = nil
+		_, err := nilAdapter.Verify(nil, []byte("test"))
+		if err == nil {
+			t.Error("Expected error for nil signature adapter, but got none")
+		}
+		if !strings.Contains(err.Error(), "signature adapter cannot be nil") {
+			t.Errorf("Expected signature adapter nil error message, got: %v", err)
+		}
+	})
+}
+
+func TestInputValidation_UtilityFunctions(t *testing.T) {
+	t.Run("ValidateFieldOrder_NilInput", func(t *testing.T) {
+		defer func() {
+			if r := recover(); r == nil {
+				t.Error("Expected panic for nil input to ValidateFieldOrder, but got none")
+			}
+		}()
+		_ = ValidateFieldOrder(nil)
+	})
+
+	t.Run("ValidateFieldOrder_ValidNumber", func(t *testing.T) {
+		valid := ValidateFieldOrder(big.NewInt(100))
+		if !valid {
+			t.Error("Expected valid for small number")
+		}
+	})
+
+	t.Run("ValidateFieldOrder_LargeNumber", func(t *testing.T) {
+		// Create a number larger than the field modulus
+		largeNum := new(big.Int).Add(FieldModulus, big.NewInt(1))
+		valid := ValidateFieldOrder(largeNum)
+		if valid {
+			t.Error("Expected invalid for number larger than field modulus")
+		}
+	})
+
+	t.Run("ValidateFieldOrder_ExactModulus", func(t *testing.T) {
+		valid := ValidateFieldOrder(FieldModulus)
+		if valid {
+			t.Error("Expected invalid for exact field modulus")
+		}
+	})
+
+	t.Run("SolidityHashToG1_ZeroHash", func(t *testing.T) {
+		var zeroHash [32]byte
+		point, err := SolidityHashToG1(zeroHash)
+		if err != nil {
+			t.Errorf("Expected no error for zero hash, but got: %v", err)
+		}
+		if point == nil {
+			t.Error("Expected non-nil point for zero hash")
+		}
+	})
+
+	t.Run("SolidityHashToG1_MaxHash", func(t *testing.T) {
+		var maxHash [32]byte
+		for i := range maxHash {
+			maxHash[i] = 0xFF
+		}
+		point, err := SolidityHashToG1(maxHash)
+		if err != nil {
+			t.Errorf("Expected no error for max hash, but got: %v", err)
+		}
+		if point == nil {
+			t.Error("Expected non-nil point for max hash")
 		}
 	})
 }
