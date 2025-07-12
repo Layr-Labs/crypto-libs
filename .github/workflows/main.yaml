@@ -6,8 +6,13 @@ on:
       - "*"
     tags:
       - 'v*'
+  pull_request:
+    branches:
+      - "*"
+      
 permissions:
   contents: read
+  
 jobs:
   gofmt:
     runs-on: ubuntu-latest
