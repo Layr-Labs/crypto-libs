@@ -97,7 +97,7 @@ func (s *Scheme) AggregateSignatures(signatures []signing.Signature) (signing.Si
 
 // BatchVerify verifies multiple signatures in a single batch operation
 func (s *Scheme) BatchVerify(publicKeys []signing.PublicKey, message []byte, signatures []signing.Signature) (bool, error) {
-	// SECURITY: Input validation
+	// Input validation
 	if publicKeys == nil {
 		return false, fmt.Errorf("public keys slice cannot be nil")
 	}

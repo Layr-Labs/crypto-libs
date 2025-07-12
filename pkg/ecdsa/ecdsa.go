@@ -103,7 +103,7 @@ func GenerateKeyPairFromSeed(seed []byte) (*PrivateKey, *PublicKey, error) {
 	n := secp256k1.S256().Params().N
 	d.Mod(d, n)
 
-	// SECURITY: Handle the extremely rare case where d is zero
+	// Handle the extremely rare case where d is zero
 	// This should virtually never happen (probability ~1/2^256)
 	if d.Sign() == 0 {
 		return nil, nil, fmt.Errorf("seed resulted in invalid private key (zero value)")
@@ -206,7 +206,7 @@ func (pk *PrivateKey) Sign(hash []byte) (*Signature, error) {
 		return nil, fmt.Errorf("failed to sign hash: %w", err)
 	}
 
-	// SECURITY: Validate signature length before accessing
+	// Validate signature length before accessing
 	if len(signature) != 65 {
 		return nil, fmt.Errorf("unexpected signature length: expected 65 bytes, got %d", len(signature))
 	}
@@ -302,7 +302,7 @@ func NewPublicKeyFromBytes(data []byte) (*PublicKey, error) {
 		x := new(big.Int).SetBytes(data[1:33])
 		y := new(big.Int).SetBytes(data[33:65])
 
-		// SECURITY: Validate coordinates are valid field elements
+		// Validate coordinates are valid field elements
 		if x.Cmp(p) >= 0 {
 			return nil, fmt.Errorf("x coordinate exceeds field prime")
 		}
@@ -310,12 +310,12 @@ func NewPublicKeyFromBytes(data []byte) (*PublicKey, error) {
 			return nil, fmt.Errorf("y coordinate exceeds field prime")
 		}
 
-		// SECURITY: Validate against point at infinity (special case)
+		// Validate against point at infinity (special case)
 		if x.Sign() == 0 && y.Sign() == 0 {
 			return nil, fmt.Errorf("point at infinity is not a valid public key")
 		}
 
-		// SECURITY: Validate against zero coordinates (potential weak points)
+		// Validate against zero coordinates (potential weak points)
 		if x.Sign() == 0 {
 			return nil, fmt.Errorf("x coordinate cannot be zero")
 		}
@@ -335,12 +335,12 @@ func NewPublicKeyFromBytes(data []byte) (*PublicKey, error) {
 	if len(data) == 33 && (data[0] == 0x02 || data[0] == 0x03) {
 		x := new(big.Int).SetBytes(data[1:])
 
-		// SECURITY: Validate x coordinate is valid field element
+		// Validate x coordinate is valid field element
 		if x.Cmp(p) >= 0 {
 			return nil, fmt.Errorf("x coordinate exceeds field prime")
 		}
 
-		// SECURITY: Validate against zero x coordinate
+		// Validate against zero x coordinate
 		if x.Sign() == 0 {
 			return nil, fmt.Errorf("x coordinate cannot be zero")
 		}
@@ -511,12 +511,12 @@ func decompressPoint(x *big.Int, yBit bool) *big.Int {
 	curve := secp256k1.S256()
 	p := curve.Params().P
 
-	// SECURITY: Validate x is within field bounds
+	// Validate x is within field bounds
 	if x.Cmp(p) >= 0 {
 		return nil // Invalid field element
 	}
 
-	// SECURITY: Validate against zero x coordinate
+	// Validate against zero x coordinate
 	if x.Sign() == 0 {
 		return nil // Zero x coordinate not allowed
 	}
@@ -534,7 +534,7 @@ func decompressPoint(x *big.Int, yBit bool) *big.Int {
 		return nil // Point not on curve
 	}
 
-	// SECURITY: Validate computed y coordinate
+	// Validate computed y coordinate
 	if y.Cmp(p) >= 0 {
 		return nil // Invalid field element
 	}
@@ -544,12 +544,12 @@ func decompressPoint(x *big.Int, yBit bool) *big.Int {
 		y.Sub(p, y)
 	}
 
-	// SECURITY: Final validation of computed y
+	// Final validation of computed y
 	if y.Sign() == 0 {
 		return nil // Zero y coordinate not allowed
 	}
 
-	// SECURITY: Final validation that the point is actually on the curve
+	// Final validation that the point is actually on the curve
 	if !curve.IsOnCurve(x, y) {
 		return nil // Point not on curve
 	}
