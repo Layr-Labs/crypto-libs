@@ -2146,7 +2146,7 @@ func TestVerifySolidityCompatible(t *testing.T) {
 
 		// Test with zero hash
 		zeroHash := [32]byte{}
-		valid, err = signature.VerifySolidityCompatible(pubKey, zeroHash)
+		_, err = signature.VerifySolidityCompatible(pubKey, zeroHash)
 		if err != nil {
 			t.Fatalf("Failed to verify solidity compatible with zero hash: %v", err)
 		}
