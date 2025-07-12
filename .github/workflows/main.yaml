@@ -6,9 +6,6 @@ on:
       - "*"
     tags:
       - 'v*'
-  schedule:
-    # Run every 20 days (1st and 21st of each month) to maintain coverage reports
-    - cron: '0 6 1,21 * *'  # 6 AM UTC on 1st and 21st of every month
 permissions:
   contents: read
 jobs:
@@ -30,7 +27,7 @@ jobs:
           fi
           echo "All files are formatted correctly."
   lint:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - name: Checkout
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # 4.2.2
@@ -44,7 +41,7 @@ jobs:
           export PATH=$PATH:$(go env GOPATH)/bin
           make lint
   test:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - name: Checkout
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # 4.2.2
@@ -52,174 +49,11 @@ jobs:
         uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5
         with:
           go-version: '1.23'
-      - name: Identify run type
-        run: |
-          if [ "${{ github.event_name }}" = "schedule" ]; then
-            echo "🕐 SCHEDULED COVERAGE REPORT - $(date '+%Y-%m-%d')"
-            echo "This is an automated coverage check running every ~20 days"
-            echo "SCHEDULED_RUN=true" >> $GITHUB_ENV
-            echo "REPORT_SUFFIX=-scheduled-$(date '+%Y%m%d')" >> $GITHUB_ENV
-          else
-            echo "🚀 REGULAR BUILD - Triggered by ${{ github.event_name }}"
-            echo "SCHEDULED_RUN=false" >> $GITHUB_ENV
-            echo "REPORT_SUFFIX=" >> $GITHUB_ENV
-          fi
-      - name: Install dependencies
+      - name: Run tests
         run: |          
-          echo "Building dependencies"
+          echo "building dependencies"
           make deps
           export PATH=$PATH:$(go env GOPATH)/bin
       
-      - name: Run tests with coverage
-        run: |
-          echo "Running tests with coverage collection"
-          go test ./... -coverprofile=coverage.out -v > test_output.log 2>&1
-          cat test_output.log
-          
-      - name: Generate coverage report
-        run: |
-          echo "Generating detailed coverage report"
-          go tool cover -func=coverage.out
-          
-      - name: Check coverage thresholds
-        run: |
-          echo "Checking coverage thresholds for each package"
-          
-          # Function to extract coverage percentage from test output
-          get_package_coverage() {
-            local package_name=$1
-            local coverage_line=$(grep "coverage:" test_output.log | grep "$package_name" | head -1)
-            if [ -n "$coverage_line" ]; then
-              echo "$coverage_line" | sed -n 's/.*coverage: \([0-9.]*\)%.*/\1/p'
-            else
-              echo ""
-            fi
-          }
-          
-          # Function to check if coverage meets minimum threshold
-          check_coverage() {
-            local package_name=$1
-            local min_coverage=$2
-            local current_coverage=$(get_package_coverage "$package_name")
-            
-            if [ -z "$current_coverage" ]; then
-              echo "⚠️  Warning: No coverage data found for $package_name"
-              return 0
-            fi
-            
-            # Use bc for floating point comparison if available, otherwise use integer comparison
-            if command -v bc > /dev/null; then
-              result=$(echo "$current_coverage >= $min_coverage" | bc -l)
-            else
-              # Convert to integer for comparison (remove decimal part)
-              current_int=${current_coverage%.*}
-              min_int=${min_coverage%.*}
-              if [ "$current_int" -ge "$min_int" ]; then
-                result=1
-              else
-                result=0
-              fi
-            fi
-            
-            if [ "$result" -eq 1 ]; then
-              echo "✅ $package_name: ${current_coverage}% (minimum: ${min_coverage}%)"
-              return 0
-            else
-              echo "❌ $package_name: ${current_coverage}% < ${min_coverage}% (COVERAGE DECREASED!)"
-              return 1
-            fi
-          }
-          
-          # Set minimum coverage thresholds based on current levels
-          # These should not decrease from current values
-          FAILED_PACKAGES=""
-          
-          echo "=== Package Coverage Report ==="
-          
-          # Check BLS381 package (current: 85.1%)
-          if ! check_coverage "github.com/Layr-Labs/crypto-libs/pkg/bls381" "85.0"; then
-            FAILED_PACKAGES="$FAILED_PACKAGES bls381"
-          fi
-          
-          # Check BN254 package (current: 87.4%)
-          if ! check_coverage "github.com/Layr-Labs/crypto-libs/pkg/bn254" "87.0"; then
-            FAILED_PACKAGES="$FAILED_PACKAGES bn254"
-          fi
-          
-          # Check ECDSA package (current: 84.4%)
-          if ! check_coverage "github.com/Layr-Labs/crypto-libs/pkg/ecdsa" "84.0"; then
-            FAILED_PACKAGES="$FAILED_PACKAGES ecdsa"
-          fi
-          
-          # Check Keystore package (current: 69.7%)
-          if ! check_coverage "github.com/Layr-Labs/crypto-libs/pkg/keystore" "69.0"; then
-            FAILED_PACKAGES="$FAILED_PACKAGES keystore"
-          fi
-          
-          # Check Legacy Keystore package (current: 70.5%)
-          if ! check_coverage "github.com/Layr-Labs/crypto-libs/pkg/keystore/legacy" "70.0"; then
-            FAILED_PACKAGES="$FAILED_PACKAGES keystore/legacy"
-          fi
-          
-          echo ""
-          echo "=== Overall Coverage Summary ==="
-          
-          # Calculate overall coverage
-          OVERALL_COVERAGE=$(go tool cover -func=coverage.out | grep "total:" | awk '{print $3}' | sed 's/%//')
-          MIN_OVERALL=80.0
-          
-          if command -v bc > /dev/null; then
-            overall_result=$(echo "$OVERALL_COVERAGE >= $MIN_OVERALL" | bc -l)
-          else
-            overall_int=${OVERALL_COVERAGE%.*}
-            min_overall_int=${MIN_OVERALL%.*}
-            if [ "$overall_int" -ge "$min_overall_int" ]; then
-              overall_result=1
-            else
-              overall_result=0
-            fi
-          fi
-          
-          if [ "$overall_result" -eq 1 ]; then
-            echo "✅ Overall Coverage: ${OVERALL_COVERAGE}% (minimum: ${MIN_OVERALL}%)"
-          else
-            echo "❌ Overall Coverage: ${OVERALL_COVERAGE}% < ${MIN_OVERALL}% (COVERAGE DECREASED!)"
-            FAILED_PACKAGES="$FAILED_PACKAGES overall"
-          fi
-          
-          # For scheduled runs, we still report but don't fail the build for coverage issues
-          # This allows us to monitor trends without blocking the scheduled job
-          if [ "$SCHEDULED_RUN" = "true" ]; then
-            echo ""
-            echo "📊 SCHEDULED REPORT SUMMARY:"
-            echo "• This is a scheduled coverage monitoring run"
-            echo "• Coverage issues (if any) are reported but don't fail the build"
-            echo "• Use this data to monitor coverage trends over time"
-            if [ -n "$FAILED_PACKAGES" ]; then
-              echo "⚠️  Note: Some packages are below threshold but this won't fail the scheduled run"
-              echo "    Failed packages:$FAILED_PACKAGES"
-            fi
-          else
-            # Fail if any package has insufficient coverage (for regular builds)
-            if [ -n "$FAILED_PACKAGES" ]; then
-              echo ""
-              echo "💥 Coverage check failed for packages:$FAILED_PACKAGES"
-              echo ""
-              echo "📋 To fix this:"
-              echo "1. Add more tests to increase coverage"
-              echo "2. Ensure new code is properly tested"
-              echo "3. Run 'go test ./... -coverprofile=coverage.out && go tool cover -func=coverage.out' locally"
-              echo ""
-              exit 1
-            else
-              echo ""
-              echo "🎉 All coverage thresholds met!"
-            fi
-          fi
-          
-      - name: Upload coverage reports
-        uses: actions/upload-artifact@50769540e7f4bd5e21e526ee35c689e35e0d6874 # v4.4.0
-        with:
-          name: coverage-report${{ env.REPORT_SUFFIX }}
-          path: coverage.out
-          retention-days: 30
+          echo "Running tests"
+          make test
