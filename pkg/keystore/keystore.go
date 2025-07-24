@@ -96,6 +96,55 @@ func processPassword(password string) []byte {
 	return []byte(string(cleaned))
 }
 
+// validateSalt extracts and validates salt parameter according to EIP-2335
+func validateSalt(params map[string]interface{}) ([]byte, error) {
+	saltParam, ok := params["salt"]
+	if !ok {
+		return nil, fmt.Errorf("missing salt parameter")
+	}
+	saltStr, ok := saltParam.(string)
+	if !ok {
+		return nil, fmt.Errorf("salt parameter must be a string")
+	}
+	if saltStr == "" {
+		return nil, fmt.Errorf("salt cannot be empty")
+	}
+
+	salt, err := hex.DecodeString(saltStr)
+	if err != nil {
+		return nil, fmt.Errorf("invalid salt: %w", err)
+	}
+
+	// EIP-2335 salt validation
+	if len(salt) < 16 {
+		return nil, fmt.Errorf("salt too short: must be at least 16 bytes, got %d", len(salt))
+	}
+	if len(salt) > 64 {
+		return nil, fmt.Errorf("salt too long: must be at most 64 bytes, got %d", len(salt))
+	}
+
+	return salt, nil
+}
+
+// validateDklen extracts and validates dklen parameter according to EIP-2335
+func validateDklen(params map[string]interface{}) (int, error) {
+	dklenParam, ok := params["dklen"]
+	if !ok {
+		return 0, fmt.Errorf("missing dklen parameter")
+	}
+	dklen, ok := dklenParam.(float64)
+	if !ok {
+		return 0, fmt.Errorf("dklen must be a number")
+	}
+
+	// EIP-2335 requires exactly 32 bytes for derived key length
+	if int(dklen) != 32 {
+		return 0, fmt.Errorf("invalid dklen: EIP-2335 requires 32 bytes, got %d", int(dklen))
+	}
+
+	return int(dklen), nil
+}
+
 // deriveKeyFromPassword derives a key from the password using the specified KDF
 func deriveKeyFromPassword(password string, kdf Module) ([]byte, error) {
 	if kdf.Function == "" {
@@ -109,24 +158,18 @@ func deriveKeyFromPassword(password string, kdf Module) ([]byte, error) {
 
 	switch kdf.Function {
 	case "pbkdf2":
-		// Extract parameters with validation
-		saltParam, ok := kdf.Params["salt"]
-		if !ok {
-			return nil, fmt.Errorf("missing salt parameter")
-		}
-		saltStr, ok := saltParam.(string)
-		if !ok {
-			return nil, fmt.Errorf("salt parameter must be a string")
-		}
-		if saltStr == "" {
-			return nil, fmt.Errorf("salt cannot be empty")
-		}
-
-		salt, err := hex.DecodeString(saltStr)
+		// Extract and validate common parameters
+		salt, err := validateSalt(kdf.Params)
 		if err != nil {
-			return nil, fmt.Errorf("invalid salt: %w", err)
+			return nil, err
 		}
 
+		dklen, err := validateDklen(kdf.Params)
+		if err != nil {
+			return nil, err
+		}
+
+		// Extract PBKDF2-specific parameters
 		cParam, ok := kdf.Params["c"]
 		if !ok {
 			return nil, fmt.Errorf("missing iterations count parameter")
@@ -134,15 +177,6 @@ func deriveKeyFromPassword(password string, kdf Module) ([]byte, error) {
 		c, ok := cParam.(float64)
 		if !ok {
 			return nil, fmt.Errorf("iterations count must be a number")
-		}
-
-		dklenParam, ok := kdf.Params["dklen"]
-		if !ok {
-			return nil, fmt.Errorf("missing dklen parameter")
-		}
-		dklen, ok := dklenParam.(float64)
-		if !ok {
-			return nil, fmt.Errorf("dklen must be a number")
 		}
 
 		prfParam, ok := kdf.Params["prf"]
@@ -154,15 +188,7 @@ func deriveKeyFromPassword(password string, kdf Module) ([]byte, error) {
 			return nil, fmt.Errorf("unsupported PRF: %v", prf)
 		}
 
-		// EIP-2335 parameter validation for PBKDF2
-		if len(salt) < 16 {
-			return nil, fmt.Errorf("salt too short: must be at least 16 bytes, got %d", len(salt))
-		}
-		if len(salt) > 64 {
-			return nil, fmt.Errorf("salt too long: must be at most 64 bytes, got %d", len(salt))
-		}
-
-		// Iteration count validation - EIP-2335 reference value is 262144
+		// PBKDF2-specific validation - EIP-2335 reference value is 262144
 		if int(c) < 1000 {
 			return nil, fmt.Errorf("iteration count too low: must be at least 1000, got %d", int(c))
 		}
@@ -170,32 +196,21 @@ func deriveKeyFromPassword(password string, kdf Module) ([]byte, error) {
 			return nil, fmt.Errorf("iteration count too high: must be at most 10000000, got %d", int(c))
 		}
 
-		// Derived key length validation
-		if int(dklen) != 32 {
-			return nil, fmt.Errorf("invalid dklen: EIP-2335 requires 32 bytes, got %d", int(dklen))
-		}
-
-		return pbkdf2.Key(processedPassword, salt, int(c), int(dklen), sha256.New), nil
+		return pbkdf2.Key(processedPassword, salt, int(c), dklen, sha256.New), nil
 
 	case "scrypt":
-		// Extract parameters with validation
-		saltParam, ok := kdf.Params["salt"]
-		if !ok {
-			return nil, fmt.Errorf("missing salt parameter")
-		}
-		saltStr, ok := saltParam.(string)
-		if !ok {
-			return nil, fmt.Errorf("salt parameter must be a string")
-		}
-		if saltStr == "" {
-			return nil, fmt.Errorf("salt cannot be empty")
-		}
-
-		salt, err := hex.DecodeString(saltStr)
+		// Extract and validate common parameters
+		salt, err := validateSalt(kdf.Params)
 		if err != nil {
-			return nil, fmt.Errorf("invalid salt: %w", err)
+			return nil, err
 		}
 
+		dklen, err := validateDklen(kdf.Params)
+		if err != nil {
+			return nil, err
+		}
+
+		// Extract scrypt-specific parameters
 		nParam, ok := kdf.Params["n"]
 		if !ok {
 			return nil, fmt.Errorf("missing N parameter")
@@ -223,23 +238,7 @@ func deriveKeyFromPassword(password string, kdf Module) ([]byte, error) {
 			return nil, fmt.Errorf("p parameter must be a number")
 		}
 
-		dklenParam, ok := kdf.Params["dklen"]
-		if !ok {
-			return nil, fmt.Errorf("missing dklen parameter")
-		}
-		dklen, ok := dklenParam.(float64)
-		if !ok {
-			return nil, fmt.Errorf("dklen must be a number")
-		}
-
-		// EIP-2335 parameter validation for scrypt
-		if len(salt) < 16 {
-			return nil, fmt.Errorf("salt too short: must be at least 16 bytes, got %d", len(salt))
-		}
-		if len(salt) > 64 {
-			return nil, fmt.Errorf("salt too long: must be at most 64 bytes, got %d", len(salt))
-		}
-
+		// Scrypt-specific validation
 		// N parameter validation - must be a power of 2
 		nInt := int(n)
 		if nInt < 1024 {
@@ -270,11 +269,6 @@ func deriveKeyFromPassword(password string, kdf Module) ([]byte, error) {
 			return nil, fmt.Errorf("p parameter too high: must be at most 16, got %d", pInt)
 		}
 
-		// Derived key length validation
-		if int(dklen) != 32 {
-			return nil, fmt.Errorf("invalid dklen: EIP-2335 requires 32 bytes, got %d", int(dklen))
-		}
-
 		// Memory usage validation - prevent excessive memory consumption
 		// Memory usage is approximately 128 * N * r bytes
 		memoryUsage := 128 * nInt * rInt
@@ -282,7 +276,7 @@ func deriveKeyFromPassword(password string, kdf Module) ([]byte, error) {
 			return nil, fmt.Errorf("scrypt parameters would require too much memory: %d bytes (max 1GB)", memoryUsage)
 		}
 
-		return scrypt.Key(processedPassword, salt, int(n), int(r), int(p), int(dklen))
+		return scrypt.Key(processedPassword, salt, nInt, rInt, pInt, dklen)
 
 	default:
 		return nil, fmt.Errorf("unsupported KDF function: %s", kdf.Function)
