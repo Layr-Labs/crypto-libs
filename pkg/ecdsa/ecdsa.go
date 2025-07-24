@@ -70,9 +70,7 @@ func GenerateKeyPair() (*PrivateKey, *PublicKey, error) {
 // GenerateKeyPairFromSeed creates a deterministic secp256k1 ECDSA private key from a seed
 func GenerateKeyPairFromSeed(seed []byte) (*PrivateKey, *PublicKey, error) {
 	// Validate seed input
-	if seed == nil {
-		return nil, nil, fmt.Errorf("seed cannot be nil")
-	}
+
 	if len(seed) == 0 {
 		return nil, nil, fmt.Errorf("seed cannot be empty")
 	}
