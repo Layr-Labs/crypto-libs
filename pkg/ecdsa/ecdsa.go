@@ -130,9 +130,6 @@ func GenerateKeyPairFromSeed(seed []byte) (*PrivateKey, *PublicKey, error) {
 
 // NewPrivateKeyFromBytes creates a secp256k1 private key from bytes
 func NewPrivateKeyFromBytes(data []byte) (*PrivateKey, error) {
-	if len(data) == 0 {
-		return nil, fmt.Errorf("private key data cannot be empty")
-	}
 
 	// Validate private key length (should be exactly 32 bytes for secp256k1)
 	if len(data) != 32 {
@@ -168,9 +165,7 @@ func NewPrivateKeyFromHexString(hexStr string) (*PrivateKey, error) {
 
 // Sign signs a 32-byte hash using secp256k1 ECDSA
 func (pk *PrivateKey) Sign(hash []byte) (*Signature, error) {
-	if hash == nil {
-		return nil, fmt.Errorf("hash cannot be nil")
-	}
+
 	if len(hash) != 32 {
 		return nil, fmt.Errorf("hash must be exactly 32 bytes, got %d", len(hash))
 	}

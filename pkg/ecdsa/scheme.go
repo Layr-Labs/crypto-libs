@@ -98,8 +98,8 @@ func (s *Scheme) AggregateSignatures(signatures []signing.Signature) (signing.Si
 // BatchVerify verifies multiple signatures in a single batch operation
 func (s *Scheme) BatchVerify(publicKeys []signing.PublicKey, message []byte, signatures []signing.Signature) (bool, error) {
 	// Input validation
-	if message == nil {
-		return false, fmt.Errorf("message cannot be nil")
+	if len(message) == 0 {
+		return false, fmt.Errorf("message cannot be nil or 0 bytes")
 	}
 	if len(publicKeys) == 0 {
 		return false, fmt.Errorf("public keys slice cannot be empty")
@@ -149,8 +149,8 @@ type privateKeyAdapter struct {
 // Sign implements the signing.PrivateKey interface
 func (a *privateKeyAdapter) Sign(message []byte) (signing.Signature, error) {
 
-	if message == nil {
-		return nil, fmt.Errorf("message cannot be nil")
+	if len(message) == 0 {
+		return nil, fmt.Errorf("message cannot be nil or 0 bytes")
 	}
 
 	// Hash the message
@@ -194,8 +194,8 @@ func (a *signatureAdapter) Verify(publicKey signing.PublicKey, message []byte) (
 	if publicKey == nil {
 		return false, fmt.Errorf("public key cannot be nil")
 	}
-	if message == nil {
-		return false, fmt.Errorf("message cannot be nil")
+	if len(message) == 0 {
+		return false, fmt.Errorf("message cannot be nil or 0 bytes")
 	}
 
 	ecdsaPubKey, ok := publicKey.(*publicKeyAdapter)

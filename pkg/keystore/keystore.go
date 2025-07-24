@@ -292,7 +292,7 @@ func deriveKeyFromPassword(password string, kdf Module) ([]byte, error) {
 // verifyPassword checks if the provided password is correct
 func verifyPassword(decryptionKey []byte, checksum Module, cipherMessage string) (bool, error) {
 	// Input validation
-	if decryptionKey == nil {
+	if len(decryptionKey) == 0 {
 		return false, fmt.Errorf("decryption key cannot be nil")
 	}
 
@@ -333,8 +333,8 @@ func verifyPassword(decryptionKey []byte, checksum Module, cipherMessage string)
 
 // decryptSecret decrypts the encrypted private key
 func decryptSecret(decryptionKey []byte, cipher Module) ([]byte, error) {
-	if decryptionKey == nil {
-		return nil, fmt.Errorf("decryption key cannot be nil")
+	if len(decryptionKey) == 0 {
+		return nil, fmt.Errorf("decryption key cannot be nil or 0 bytes")
 	}
 
 	if cipher.Function == "" {
@@ -405,9 +405,7 @@ func decryptSecret(decryptionKey []byte, cipher Module) ([]byte, error) {
 
 // GetPrivateKey decrypts and returns the private key from the keystore
 func (k *EIP2335Keystore) GetPrivateKey(password string, scheme signing.SigningScheme) (signing.PrivateKey, error) {
-	if k == nil {
-		return nil, fmt.Errorf("keystore data cannot be nil")
-	}
+
 	if len(password) == 0 {
 		return nil, fmt.Errorf("password cannot be empty")
 	}
@@ -676,11 +674,6 @@ func DetermineCurveType(curveStr string) string {
 		return ""
 	}
 
-	// Validate curve string length
-	if len(curveStr) > 50 {
-		return "" // Invalid curve string
-	}
-
 	switch strings.ToLower(strings.TrimSpace(curveStr)) {
 	case "bls381":
 		return "bls381"
@@ -718,7 +711,9 @@ func GenerateKeystore(privateKey signing.PrivateKey, password, curveType string,
 	if len(password) == 0 {
 		return nil, fmt.Errorf("password cannot be empty")
 	}
-	if curveType == "" {
+
+	determinedCurveType := DetermineCurveType(curveType)
+	if determinedCurveType == "" {
 		return nil, fmt.Errorf("curve type cannot be empty")
 	}
 
@@ -741,12 +736,6 @@ func GenerateKeystore(privateKey signing.PrivateKey, password, curveType string,
 	publicKey := privateKey.Public()
 	pubkeyBytes := publicKey.Bytes()
 	pubkeyHex := hex.EncodeToString(pubkeyBytes)
-
-	// Validate the curve type
-	curveType = DetermineCurveType(curveType)
-	if curveType == "" {
-		return nil, fmt.Errorf("invalid curve type")
-	}
 
 	// Generate salt and IV
 	salt, err := generateRandomSalt()
@@ -880,7 +869,9 @@ func SaveToKeystoreWithCurveType(privateKey signing.PrivateKey, filePath, passwo
 	if len(password) == 0 {
 		return fmt.Errorf("password cannot be empty")
 	}
-	if curveType == "" {
+
+	determinedCurveType := DetermineCurveType(curveType)
+	if determinedCurveType == "" {
 		return fmt.Errorf("curve type cannot be empty")
 	}
 
@@ -917,10 +908,6 @@ func SaveToKeystoreWithCurveType(privateKey signing.PrivateKey, filePath, passwo
 
 // GetSigningSchemeForCurveType returns the appropriate signing scheme based on curve type
 func GetSigningSchemeForCurveType(curveType string) (signing.SigningScheme, error) {
-
-	if curveType == "" {
-		return nil, fmt.Errorf("curve type cannot be empty")
-	}
 
 	switch strings.ToLower(strings.TrimSpace(curveType)) {
 	case "bls381":

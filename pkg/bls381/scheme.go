@@ -228,8 +228,8 @@ type privateKeyAdapter struct {
 
 // Sign implements the signing.PrivateKey interface
 func (a *privateKeyAdapter) Sign(message []byte) (signing.Signature, error) {
-	if message == nil {
-		return nil, fmt.Errorf("message cannot be nil")
+	if len(message) == 0 {
+		return nil, fmt.Errorf("message cannot be nil or 0 bytes")
 	}
 
 	sig, err := a.pk.Sign(message)
@@ -269,8 +269,9 @@ func (a *signatureAdapter) Verify(publicKey signing.PublicKey, message []byte) (
 	if publicKey == nil {
 		return false, fmt.Errorf("public key cannot be nil")
 	}
-	if message == nil {
-		return false, fmt.Errorf("message cannot be nil")
+
+	if len(message) == 0 {
+		return false, fmt.Errorf("message cannot be nil or0 bytes")
 	}
 
 	bls381PubKey, ok := publicKey.(*publicKeyAdapter)
