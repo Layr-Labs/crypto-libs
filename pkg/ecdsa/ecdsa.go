@@ -71,9 +71,6 @@ func GenerateKeyPair() (*PrivateKey, *PublicKey, error) {
 func GenerateKeyPairFromSeed(seed []byte) (*PrivateKey, *PublicKey, error) {
 	// Validate seed input
 
-	if len(seed) == 0 {
-		return nil, nil, fmt.Errorf("seed cannot be empty")
-	}
 	if len(seed) < 16 {
 		return nil, nil, fmt.Errorf("seed must be at least 16 bytes for security")
 	}
