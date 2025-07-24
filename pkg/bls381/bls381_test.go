@@ -942,7 +942,7 @@ func TestInputValidation_PrivateKeySign(t *testing.T) {
 	t.Run("EmptyMessage", func(t *testing.T) {
 		_, err := privateKey.Sign([]byte{})
 		if err != nil {
-			t.Errorf("Expected no error for empty message, but got: %v", err)
+			t.Errorf("Expected error for empty message, but got: %v", err)
 		}
 	})
 
@@ -1554,7 +1554,7 @@ func TestInputValidation_SchemeAdapterMethods(t *testing.T) {
 		if err == nil {
 			t.Error("Expected error for nil signatures slice, but got none")
 		}
-		if !strings.Contains(err.Error(), "cannot be nil") {
+		if !strings.Contains(err.Error(), "signatures slice cannot be empty") {
 			t.Errorf("Expected nil error message, got: %v", err)
 		}
 	})

@@ -1946,7 +1946,7 @@ func TestInputValidation_SchemeAdapterMethods(t *testing.T) {
 		if err == nil {
 			t.Error("Expected error for nil signatures slice, but got none")
 		}
-		if !strings.Contains(err.Error(), "cannot be nil") {
+		if !strings.Contains(err.Error(), "signatures slice cannot be empty") {
 			t.Errorf("Expected nil error message, got: %v", err)
 		}
 	})
@@ -2048,7 +2048,8 @@ func TestInputValidation_SchemeAdapterMethods(t *testing.T) {
 
 	t.Run("SignatureAdapter_NilAdapter", func(t *testing.T) {
 		var nilAdapter *signatureAdapter = nil
-		_, err := nilAdapter.Verify(nil, []byte("test"))
+		_, pubKey, _ := scheme.GenerateKeyPair()
+		_, err := nilAdapter.Verify(pubKey, []byte("test"))
 		if err == nil {
 			t.Error("Expected error for nil signature adapter, but got none")
 		}

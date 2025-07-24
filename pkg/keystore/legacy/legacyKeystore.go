@@ -5,14 +5,15 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
+
 	"github.com/Layr-Labs/crypto-libs/pkg/bls381"
 	"github.com/Layr-Labs/crypto-libs/pkg/bn254"
 	"github.com/Layr-Labs/crypto-libs/pkg/signing"
 	"github.com/ethereum/go-ethereum/accounts/keystore"
 	"github.com/google/uuid"
-	"os"
-	"path/filepath"
-	"strings"
 )
 
 var ErrInvalidKeystoreFile = errors.New("invalid keystore file")

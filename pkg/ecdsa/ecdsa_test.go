@@ -495,12 +495,13 @@ func TestVerifyWithAddress(t *testing.T) {
 // Additional input validation tests - testing edge cases and invalid inputs
 
 func TestInputValidation_GenerateKeyPairFromSeed(t *testing.T) {
+
 	t.Run("NilSeed", func(t *testing.T) {
 		_, _, err := GenerateKeyPairFromSeed(nil)
 		if err == nil {
 			t.Error("Expected error for nil seed, but got none")
 		}
-		if !strings.Contains(err.Error(), "cannot be nil") {
+		if !strings.Contains(err.Error(), "seed must be at least 16 bytes for security") {
 			t.Errorf("Expected error message about nil seed, got: %v", err)
 		}
 	})
@@ -510,7 +511,7 @@ func TestInputValidation_GenerateKeyPairFromSeed(t *testing.T) {
 		if err == nil {
 			t.Error("Expected error for empty seed, but got none")
 		}
-		if !strings.Contains(err.Error(), "cannot be empty") {
+		if !strings.Contains(err.Error(), "seed must be at least 16 bytes for security") {
 			t.Errorf("Expected error message about empty seed, got: %v", err)
 		}
 	})
@@ -587,7 +588,7 @@ func TestInputValidation_NewPrivateKeyFromBytes(t *testing.T) {
 		if err == nil {
 			t.Error("Expected error for nil data, but got none")
 		}
-		if !strings.Contains(err.Error(), "cannot be empty") {
+		if !strings.Contains(err.Error(), "private key must be exactly 32 bytes, got 0") {
 			t.Errorf("Expected error message about empty data, got: %v", err)
 		}
 	})
@@ -597,7 +598,7 @@ func TestInputValidation_NewPrivateKeyFromBytes(t *testing.T) {
 		if err == nil {
 			t.Error("Expected error for empty data, but got none")
 		}
-		if !strings.Contains(err.Error(), "cannot be empty") {
+		if !strings.Contains(err.Error(), "private key must be exactly 32 bytes, got 0") {
 			t.Errorf("Expected error message about empty data, got: %v", err)
 		}
 	})
@@ -761,7 +762,7 @@ func TestInputValidation_PrivateKeySign(t *testing.T) {
 		if err == nil {
 			t.Error("Expected error for nil hash, but got none")
 		}
-		if !strings.Contains(err.Error(), "cannot be nil") {
+		if !strings.Contains(err.Error(), "hash must be exactly 32 bytes, got 0") {
 			t.Errorf("Expected error message about nil hash, got: %v", err)
 		}
 	})
@@ -1595,7 +1596,7 @@ func TestInputValidation_SchemeAdapterMethods(t *testing.T) {
 		if err == nil {
 			t.Error("Expected error for nil seed, but got none")
 		}
-		if !strings.Contains(err.Error(), "cannot be nil") {
+		if !strings.Contains(err.Error(), "seed must be at least 16 bytes for security") {
 			t.Errorf("Expected nil error message, got: %v", err)
 		}
 	})

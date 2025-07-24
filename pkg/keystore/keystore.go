@@ -400,6 +400,10 @@ func decryptSecret(decryptionKey []byte, cipher Module) ([]byte, error) {
 // GetPrivateKey decrypts and returns the private key from the keystore
 func (k *EIP2335Keystore) GetPrivateKey(password string, scheme signing.SigningScheme) (signing.PrivateKey, error) {
 
+	if k == nil {
+		return nil, fmt.Errorf("keystore data cannot be nil")
+	}
+
 	if len(password) == 0 {
 		return nil, fmt.Errorf("password cannot be empty")
 	}

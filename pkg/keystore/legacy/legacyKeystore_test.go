@@ -74,6 +74,10 @@ func TestKeystoreBN254(t *testing.T) {
 	loadedKey3, err := parsedKeystore.GetPrivateKey(password, scheme)
 	require.NoError(t, err)
 	assert.Equal(t, privateKey.Bytes(), loadedKey3.Bytes())
+
+	loadedKeystore.CurveType = ""
+	_, err = loadedKeystore.GetPrivateKey(password, nil)
+	require.Error(t, err)
 }
 
 func TestKeystoreBLS381(t *testing.T) {
@@ -125,6 +129,10 @@ func TestKeystoreBLS381(t *testing.T) {
 	loadedKey2, err := loadedKeystore.GetPrivateKey(password, nil)
 	require.NoError(t, err)
 	assert.Equal(t, privateKey.Bytes(), loadedKey2.Bytes())
+
+	loadedKeystore.CurveType = ""
+	_, err = loadedKeystore.GetPrivateKey(password, nil)
+	require.Error(t, err)
 }
 
 func TestGenerateRandomPassword(t *testing.T) {

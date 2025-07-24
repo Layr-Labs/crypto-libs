@@ -269,6 +269,9 @@ type signatureAdapter struct {
 // Verify implements the signing.Signature interface
 func (a *signatureAdapter) Verify(publicKey signing.PublicKey, message []byte) (bool, error) {
 
+	if a == nil {
+		return false, fmt.Errorf("signature adapter cannot be nil")
+	}
 	if publicKey == nil {
 		return false, fmt.Errorf("public key cannot be nil")
 	}
