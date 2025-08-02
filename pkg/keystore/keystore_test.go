@@ -3,10 +3,11 @@ package keystore
 import (
 	"crypto/sha256"
 	"encoding/hex"
-	"github.com/Layr-Labs/crypto-libs/pkg/signing"
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/Layr-Labs/crypto-libs/pkg/signing"
 
 	"github.com/Layr-Labs/crypto-libs/pkg/bls381"
 	"github.com/Layr-Labs/crypto-libs/pkg/bn254"
@@ -68,6 +69,10 @@ func testKeystoreWithScheme(t *testing.T, scheme signing.SigningScheme, curveTyp
 	valid, err := sig.Verify(pubKey, message)
 	require.NoError(t, err)
 	assert.True(t, valid)
+
+	ks.CurveType = ""
+	_, err = ks.GetPrivateKey(password, nil)
+	require.Error(t, err)
 }
 
 func TestLegacyKeystoreBackwardCompatibility(t *testing.T) {

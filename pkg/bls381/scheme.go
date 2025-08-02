@@ -1,6 +1,8 @@
 package bls381
 
 import (
+	"fmt"
+
 	"github.com/Layr-Labs/crypto-libs/pkg/signing"
 )
 
@@ -91,12 +93,23 @@ func (s *Scheme) NewPublicKeyFromHexString(hex string) (signing.PublicKey, error
 
 // AggregateSignatures combines multiple signatures into a single signature
 func (s *Scheme) AggregateSignatures(signatures []signing.Signature) (signing.Signature, error) {
+
+	if len(signatures) == 0 {
+		return nil, fmt.Errorf("signatures slice cannot be empty")
+	}
+
 	// Convert generic signatures to BLS381 specific signatures
 	bls381Sigs := make([]*Signature, len(signatures))
 	for i, sig := range signatures {
+		if sig == nil {
+			return nil, fmt.Errorf("signature at index %d cannot be nil", i)
+		}
 		bls381Sig, ok := sig.(*signatureAdapter)
 		if !ok {
 			return nil, signing.ErrInvalidSignatureType
+		}
+		if bls381Sig.sig == nil {
+			return nil, fmt.Errorf("signature at index %d cannot be nil", i)
 		}
 		bls381Sigs[i] = bls381Sig.sig
 	}
@@ -111,12 +124,29 @@ func (s *Scheme) AggregateSignatures(signatures []signing.Signature) (signing.Si
 
 // BatchVerify verifies multiple signatures in a single batch operation
 func (s *Scheme) BatchVerify(publicKeys []signing.PublicKey, message []byte, signatures []signing.Signature) (bool, error) {
+
+	if len(publicKeys) == 0 {
+		return false, fmt.Errorf("public keys slice cannot be empty")
+	}
+	if len(signatures) == 0 {
+		return false, fmt.Errorf("signatures slice cannot be empty")
+	}
+	if len(publicKeys) != len(signatures) {
+		return false, fmt.Errorf("public keys and signatures length mismatch")
+	}
+
 	// Convert generic public keys to BLS381 specific public keys
 	bls381PubKeys := make([]*PublicKey, len(publicKeys))
 	for i, pubKey := range publicKeys {
+		if pubKey == nil {
+			return false, fmt.Errorf("public key at index %d cannot be nil", i)
+		}
 		bls381PubKey, ok := pubKey.(*publicKeyAdapter)
 		if !ok {
 			return false, signing.ErrInvalidPublicKeyType
+		}
+		if bls381PubKey.pk == nil {
+			return false, fmt.Errorf("public key at index %d cannot be nil", i)
 		}
 		bls381PubKeys[i] = bls381PubKey.pk
 	}
@@ -124,9 +154,15 @@ func (s *Scheme) BatchVerify(publicKeys []signing.PublicKey, message []byte, sig
 	// Convert generic signatures to BLS381 specific signatures
 	bls381Sigs := make([]*Signature, len(signatures))
 	for i, sig := range signatures {
+		if sig == nil {
+			return false, fmt.Errorf("signature at index %d cannot be nil", i)
+		}
 		bls381Sig, ok := sig.(*signatureAdapter)
 		if !ok {
 			return false, signing.ErrInvalidSignatureType
+		}
+		if bls381Sig.sig == nil {
+			return false, fmt.Errorf("signature at index %d cannot be nil", i)
 		}
 		bls381Sigs[i] = bls381Sig.sig
 	}
@@ -136,12 +172,37 @@ func (s *Scheme) BatchVerify(publicKeys []signing.PublicKey, message []byte, sig
 
 // AggregateVerify verifies an aggregated signature against multiple public keys and multiple messages
 func (s *Scheme) AggregateVerify(publicKeys []signing.PublicKey, messages [][]byte, aggSignature signing.Signature) (bool, error) {
+	if publicKeys == nil {
+		return false, fmt.Errorf("public keys slice cannot be nil")
+	}
+	if messages == nil {
+		return false, fmt.Errorf("messages slice cannot be nil")
+	}
+	if aggSignature == nil {
+		return false, fmt.Errorf("aggregated signature cannot be nil")
+	}
+	if len(publicKeys) == 0 {
+		return false, fmt.Errorf("public keys slice cannot be empty")
+	}
+	if len(messages) == 0 {
+		return false, fmt.Errorf("messages slice cannot be empty")
+	}
+	if len(publicKeys) != len(messages) {
+		return false, fmt.Errorf("public keys and messages length mismatch")
+	}
+
 	// Convert generic public keys to BLS381 specific public keys
 	bls381PubKeys := make([]*PublicKey, len(publicKeys))
 	for i, pubKey := range publicKeys {
+		if pubKey == nil {
+			return false, fmt.Errorf("public key at index %d cannot be nil", i)
+		}
 		bls381PubKey, ok := pubKey.(*publicKeyAdapter)
 		if !ok {
 			return false, signing.ErrInvalidPublicKeyType
+		}
+		if bls381PubKey.pk == nil {
+			return false, fmt.Errorf("public key at index %d cannot be nil", i)
 		}
 		bls381PubKeys[i] = bls381PubKey.pk
 	}
@@ -150,6 +211,9 @@ func (s *Scheme) AggregateVerify(publicKeys []signing.PublicKey, messages [][]by
 	bls381Sig, ok := aggSignature.(*signatureAdapter)
 	if !ok {
 		return false, signing.ErrInvalidSignatureType
+	}
+	if bls381Sig.sig == nil {
+		return false, fmt.Errorf("aggregated signature cannot be nil")
 	}
 
 	return AggregateVerify(bls381PubKeys, messages, bls381Sig.sig)
@@ -164,6 +228,10 @@ type privateKeyAdapter struct {
 
 // Sign implements the signing.PrivateKey interface
 func (a *privateKeyAdapter) Sign(message []byte) (signing.Signature, error) {
+	if len(message) == 0 {
+		return nil, fmt.Errorf("message cannot be nil or 0 bytes")
+	}
+
 	sig, err := a.pk.Sign(message)
 	if err != nil {
 		return nil, err
@@ -198,9 +266,21 @@ type signatureAdapter struct {
 
 // Verify implements the signing.Signature interface
 func (a *signatureAdapter) Verify(publicKey signing.PublicKey, message []byte) (bool, error) {
+	if publicKey == nil {
+		return false, fmt.Errorf("public key cannot be nil")
+	}
+
+	if len(message) == 0 {
+		return false, fmt.Errorf("message cannot be nil or0 bytes")
+	}
+
 	bls381PubKey, ok := publicKey.(*publicKeyAdapter)
 	if !ok {
 		return false, signing.ErrInvalidPublicKeyType
+	}
+
+	if bls381PubKey.pk == nil {
+		return false, fmt.Errorf("public key cannot be nil")
 	}
 
 	return a.sig.Verify(bls381PubKey.pk, message)
