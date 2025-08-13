@@ -267,11 +267,15 @@ func (pk *PrivateKey) DeriveAddress() (common.Address, error) {
 	// Derive public key
 	pubKey := pk.Public()
 
+	return pubKey.DeriveAddress()
+}
+
+func (pk *PublicKey) DeriveAddress() (common.Address, error) {
 	// Use crypto package to derive address from public key
 	ecdsaPubKey := &ecdsa.PublicKey{
 		Curve: secp256k1.S256(),
-		X:     pubKey.X,
-		Y:     pubKey.Y,
+		X:     pk.X,
+		Y:     pk.Y,
 	}
 
 	address := crypto.PubkeyToAddress(*ecdsaPubKey)
