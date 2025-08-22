@@ -483,15 +483,13 @@ func Test_BLS381(t *testing.T) {
 			t.Error("Expected error for invalid hex string, but got none")
 		}
 
-		// Test with empty hex string (should create a zero private key)
-		zeroKey, err := NewPrivateKeyFromHexString("")
-		if err != nil {
-			t.Fatalf("Failed to create private key from empty hex string: %v", err)
+		// Test with empty hex string (should now error due to zero check)
+		_, err = NewPrivateKeyFromHexString("")
+		if err == nil {
+			t.Error("Expected error for empty hex string (creates zero key), but got none")
 		}
-
-		// Zero key should have zero bytes
-		if len(zeroKey.Bytes()) != 0 {
-			t.Error("Zero key should have empty bytes")
+		if !strings.Contains(err.Error(), "private key cannot be zero") {
+			t.Errorf("Expected error message about zero private key, got: %v", err)
 		}
 	})
 
@@ -849,22 +847,28 @@ func TestInputValidation_GenerateKeyPairEIP2333(t *testing.T) {
 func TestInputValidation_NewPrivateKeyFromBytes(t *testing.T) {
 	t.Run("NilData", func(t *testing.T) {
 		_, err := NewPrivateKeyFromBytes(nil)
-		if err != nil {
-			t.Errorf("Expected no error for nil data (should create zero key), but got: %v", err)
+		if err == nil {
+			t.Error("Expected error for nil data (creates zero key), but got none")
+		}
+		if !strings.Contains(err.Error(), "private key cannot be zero") {
+			t.Errorf("Expected error message about zero private key, got: %v", err)
 		}
 	})
 
 	t.Run("EmptyData", func(t *testing.T) {
 		_, err := NewPrivateKeyFromBytes([]byte{})
-		if err != nil {
-			t.Errorf("Expected no error for empty data (should create zero key), but got: %v", err)
+		if err == nil {
+			t.Error("Expected error for empty data (creates zero key), but got none")
+		}
+		if !strings.Contains(err.Error(), "private key cannot be zero") {
+			t.Errorf("Expected error message about zero private key, got: %v", err)
 		}
 	})
 
 	t.Run("SingleByte", func(t *testing.T) {
 		_, err := NewPrivateKeyFromBytes([]byte{0x01})
 		if err != nil {
-			t.Errorf("Expected no error for single byte, but got: %v", err)
+			t.Errorf("Expected no error for single byte (valid non-zero), but got: %v", err)
 		}
 	})
 
@@ -882,11 +886,14 @@ func TestInputValidation_NewPrivateKeyFromBytes(t *testing.T) {
 	t.Run("AllZeros", func(t *testing.T) {
 		zeros := make([]byte, 32)
 		key, err := NewPrivateKeyFromBytes(zeros)
-		if err != nil {
-			t.Errorf("Expected no error for all zeros, but got: %v", err)
+		if err == nil {
+			t.Error("Expected error for all zeros, but got none")
 		}
-		if key == nil {
-			t.Error("Expected non-nil key for all zeros")
+		if !strings.Contains(err.Error(), "private key cannot be zero") {
+			t.Errorf("Expected error message about zero private key, got: %v", err)
+		}
+		if key != nil {
+			t.Error("Expected nil key for all zeros")
 		}
 	})
 
@@ -903,13 +910,67 @@ func TestInputValidation_NewPrivateKeyFromBytes(t *testing.T) {
 			t.Error("Expected non-nil key for all ones")
 		}
 	})
+
+	t.Run("FieldOrderValue", func(t *testing.T) {
+		// BLS12-381 field order (r): 52435875175126190479447740508185965837690552500527637822603658699938581184513
+		fieldOrderBytes, _ := hex.DecodeString("73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001")
+		_, err := NewPrivateKeyFromBytes(fieldOrderBytes)
+		if err == nil {
+			t.Error("Expected error for field order value, but got none")
+		}
+		if !strings.Contains(err.Error(), "private key cannot be equal to field order") {
+			t.Errorf("Expected error message about field order, got: %v", err)
+		}
+	})
+
+	t.Run("JustBelowFieldOrder", func(t *testing.T) {
+		// Field order - 1
+		fieldOrderMinus1, _ := hex.DecodeString("73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000000")
+		key, err := NewPrivateKeyFromBytes(fieldOrderMinus1)
+		if err != nil {
+			t.Errorf("Expected no error for field order - 1, but got: %v", err)
+		}
+		if key == nil {
+			t.Error("Expected non-nil key for field order - 1")
+		}
+	})
+
+	t.Run("AboveFieldOrder", func(t *testing.T) {
+		// Value larger than field order - should be reduced modulo field order
+		largeValue := make([]byte, 32)
+		for i := range largeValue {
+			largeValue[i] = 0xFF
+		}
+		key, err := NewPrivateKeyFromBytes(largeValue)
+		if err != nil {
+			t.Errorf("Expected no error for value above field order (should be reduced), but got: %v", err)
+		}
+		if key == nil {
+			t.Error("Expected non-nil key for value above field order")
+		}
+	})
+
+	t.Run("SmallNonZeroValue", func(t *testing.T) {
+		// Test with a small non-zero value
+		smallValue := []byte{0x00, 0x00, 0x00, 0x01} // Represents 1
+		key, err := NewPrivateKeyFromBytes(smallValue)
+		if err != nil {
+			t.Errorf("Expected no error for small non-zero value, but got: %v", err)
+		}
+		if key == nil {
+			t.Error("Expected non-nil key for small non-zero value")
+		}
+	})
 }
 
 func TestInputValidation_NewPrivateKeyFromHexString(t *testing.T) {
 	t.Run("EmptyString", func(t *testing.T) {
 		_, err := NewPrivateKeyFromHexString("")
-		if err != nil {
-			t.Errorf("Expected no error for empty string (should create zero key), but got: %v", err)
+		if err == nil {
+			t.Error("Expected error for empty string (creates zero key), but got none")
+		}
+		if !strings.Contains(err.Error(), "private key cannot be zero") {
+			t.Errorf("Expected error message about zero private key, got: %v", err)
 		}
 	})
 
@@ -1483,8 +1544,11 @@ func TestInputValidation_PrivateKeyMethods(t *testing.T) {
 	t.Run("PrivateKeyToHexWithNilBytes", func(t *testing.T) {
 		pk := &PrivateKey{ScalarBytes: nil, scalar: nil}
 		hex, err := pk.ToHex()
-		if err != nil {
-			t.Errorf("Expected no error for ToHex with nil bytes, but got: %v", err)
+		if err == nil {
+			t.Error("Expected error for ToHex with nil bytes, but got none")
+		}
+		if !strings.Contains(err.Error(), "private key is nil or scalar bytes are nil") {
+			t.Errorf("Expected error message about nil private key or scalar bytes, got: %v", err)
 		}
 		if hex != "" {
 			t.Error("Expected empty hex string for nil bytes")
@@ -1499,6 +1563,45 @@ func TestInputValidation_PrivateKeyMethods(t *testing.T) {
 		}
 		if hex != "" {
 			t.Error("Expected empty hex string for empty bytes")
+		}
+	})
+
+	t.Run("ToHexWithNilPrivateKey", func(t *testing.T) {
+		var pk *PrivateKey
+		hex, err := pk.ToHex()
+		if err == nil {
+			t.Error("Expected error for ToHex with nil private key, but got none")
+		}
+		if !strings.Contains(err.Error(), "private key is nil or scalar bytes are nil") {
+			t.Errorf("Expected error message about nil private key or scalar bytes, got: %v", err)
+		}
+		if hex != "" {
+			t.Error("Expected empty hex string for nil private key")
+		}
+	})
+
+	t.Run("ToHexWithValidPrivateKey", func(t *testing.T) {
+		// Generate a valid private key
+		validPk, _, err := GenerateKeyPair()
+		if err != nil {
+			t.Fatalf("Failed to generate key pair: %v", err)
+		}
+
+		hex, err := validPk.ToHex()
+		if err != nil {
+			t.Errorf("Expected no error for ToHex with valid private key, but got: %v", err)
+		}
+		if hex == "" {
+			t.Error("Expected non-empty hex string for valid private key")
+		}
+
+		// Verify the hex can be converted back
+		recoveredPk, err := NewPrivateKeyFromHexString(hex)
+		if err != nil {
+			t.Errorf("Failed to recover private key from hex: %v", err)
+		}
+		if !bytes.Equal(validPk.Bytes(), recoveredPk.Bytes()) {
+			t.Error("Recovered private key doesn't match original")
 		}
 	})
 }

@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/Layr-Labs/crypto-libs/pkg/signing"
@@ -1020,5 +1021,159 @@ func TestEIP2335TestVectors(t *testing.T) {
 		// Both should have the same public key
 		assert.Equal(t, scryptKeystore.Pubkey, pbkdf2Keystore.Pubkey)
 		assert.Equal(t, expectedPubkey, scryptKeystore.Pubkey)
+	})
+}
+
+// TestDecryptionKeyLengthValidation tests the specific decryption key length checks
+func TestDecryptionKeyLengthValidation(t *testing.T) {
+	t.Run("verifyPassword - Key Length Validation", func(t *testing.T) {
+		checksum := Module{
+			Function: "sha256",
+			Message:  "abc123",
+			Params:   map[string]interface{}{},
+		}
+		cipherMessage := "1234567890abcdef"
+
+		// Test with key exactly 32 bytes (valid)
+		validKey := make([]byte, 32)
+		_, err := verifyPassword(validKey, checksum, cipherMessage)
+		// Should not error due to key length
+		if err != nil && err.Error() == "decryption key too short: expected 32 bytes, got 32" {
+			t.Error("Should not get length error for 32-byte key")
+		}
+
+		// Test with key > 32 bytes (valid)
+		longKey := make([]byte, 64)
+		_, err = verifyPassword(longKey, checksum, cipherMessage)
+		// Should not error due to key length
+		if err != nil && err.Error() == "decryption key too short: expected 32 bytes, got 64" {
+			t.Error("Should not get length error for 64-byte key")
+		}
+
+		// Test with key < 32 bytes (invalid)
+		shortKey := make([]byte, 31)
+		_, err = verifyPassword(shortKey, checksum, cipherMessage)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "decryption key too short: expected 32 bytes, got 31")
+
+		// Test with very short key
+		veryShortKey := make([]byte, 16)
+		_, err = verifyPassword(veryShortKey, checksum, cipherMessage)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "decryption key too short: expected 32 bytes, got 16")
+
+		// Test with 1 byte key
+		oneByteKey := make([]byte, 1)
+		_, err = verifyPassword(oneByteKey, checksum, cipherMessage)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "decryption key too short: expected 32 bytes, got 1")
+	})
+
+	t.Run("decryptSecret - Key Length Validation", func(t *testing.T) {
+		cipher := Module{
+			Function: "aes-128-ctr",
+			Message:  "abc123",
+			Params: map[string]interface{}{
+				"iv": "1234567890abcdef1234567890abcdef",
+			},
+		}
+
+		// Test with key exactly 16 bytes (valid)
+		validKey := make([]byte, 16)
+		_, err := decryptSecret(validKey, cipher)
+		// Should get a different error (invalid ciphertext), not key length error
+		if err != nil && strings.Contains(err.Error(), "decryption key too short") {
+			t.Error("Should not get length error for 16-byte key")
+		}
+
+		// Test with key > 16 bytes (valid)
+		longKey := make([]byte, 32)
+		_, err = decryptSecret(longKey, cipher)
+		// Should get a different error (invalid ciphertext), not key length error
+		if err != nil && strings.Contains(err.Error(), "decryption key too short") {
+			t.Error("Should not get length error for 32-byte key")
+		}
+
+		// Test with key < 16 bytes (invalid)
+		shortKey := make([]byte, 15)
+		_, err = decryptSecret(shortKey, cipher)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "decryption key too short: expected at least 16 bytes, got 15")
+
+		// Test with very short key
+		veryShortKey := make([]byte, 8)
+		_, err = decryptSecret(veryShortKey, cipher)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "decryption key too short: expected at least 16 bytes, got 8")
+
+		// Test with 1 byte key
+		oneByteKey := make([]byte, 1)
+		_, err = decryptSecret(oneByteKey, cipher)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "decryption key too short: expected at least 16 bytes, got 1")
+	})
+
+	t.Run("Integration - Key Length Validation in Context", func(t *testing.T) {
+		// Create a valid keystore-like structure to test the functions in context
+		validChecksum := Module{
+			Function: "sha256",
+			Message:  "d2217fe5f3e9a1e34581ef8a78f7c9928e436d36dacc5e846690a5581e8ea484",
+			Params:   map[string]interface{}{},
+		}
+
+		validCipher := Module{
+			Function: "aes-128-ctr",
+			Message:  "06ae90d55fe0a6e9c5c3bc5b170827b2e5cce3929ed3f116c2811e6366dfe20f",
+			Params: map[string]interface{}{
+				"iv": "264daa3f303d7259501c93d997d84fe6",
+			},
+		}
+
+		// Test verifyPassword with various key lengths
+		t.Run("verifyPassword with different key lengths", func(t *testing.T) {
+			// 15 bytes - too short for both functions
+			key15 := make([]byte, 15)
+			valid, err := verifyPassword(key15, validChecksum, validCipher.Message)
+			require.Error(t, err)
+			assert.False(t, valid)
+			assert.Contains(t, err.Error(), "decryption key too short: expected 32 bytes, got 15")
+
+			// 20 bytes - valid for decryptSecret but not verifyPassword
+			key20 := make([]byte, 20)
+			valid, err = verifyPassword(key20, validChecksum, validCipher.Message)
+			require.Error(t, err)
+			assert.False(t, valid)
+			assert.Contains(t, err.Error(), "decryption key too short: expected 32 bytes, got 20")
+
+			// 32 bytes - valid for both
+			key32 := make([]byte, 32)
+			// This will fail due to invalid checksum, not key length
+			valid, err = verifyPassword(key32, validChecksum, validCipher.Message)
+			require.NoError(t, err)
+			assert.False(t, valid) // False due to checksum mismatch, not key length
+		})
+
+		// Test decryptSecret with various key lengths
+		t.Run("decryptSecret with different key lengths", func(t *testing.T) {
+			// 10 bytes - too short
+			key10 := make([]byte, 10)
+			secret, err := decryptSecret(key10, validCipher)
+			require.Error(t, err)
+			assert.Nil(t, secret)
+			assert.Contains(t, err.Error(), "decryption key too short: expected at least 16 bytes, got 10")
+
+			// 16 bytes - valid minimum
+			key16 := make([]byte, 16)
+			// This will succeed in terms of key length
+			secret, err = decryptSecret(key16, validCipher)
+			require.NoError(t, err)
+			assert.NotNil(t, secret)
+
+			// 32 bytes - valid
+			key32 := make([]byte, 32)
+			secret, err = decryptSecret(key32, validCipher)
+			require.NoError(t, err)
+			assert.NotNil(t, secret)
+		})
 	})
 }

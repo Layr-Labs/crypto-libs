@@ -169,7 +169,20 @@ func GenerateKeyPairEIP2333(seed []byte, path []uint32) (*PrivateKey, *PublicKey
 
 // NewPrivateKeyFromBytes creates a private key from bytes
 func NewPrivateKeyFromBytes(data []byte) (*PrivateKey, error) {
+
+	// Ensure the key is in the field's range
+	frOrder := fr.Modulus()
 	scalar := new(big.Int).SetBytes(data)
+
+	if scalar.Sign() == 0 {
+		return nil, fmt.Errorf("private key cannot be zero")
+	}
+
+	if scalar.Cmp(frOrder) == 0 {
+		return nil, fmt.Errorf("private key cannot be equal to field order")
+	}
+
+	scalar.Mod(scalar, frOrder)
 
 	return &PrivateKey{
 		scalar:      scalar,
@@ -222,6 +235,9 @@ func (pk *PrivateKey) Bytes() []byte {
 
 // ToHex returns the private key as a hex string
 func (pk *PrivateKey) ToHex() (string, error) {
+	if pk == nil || pk.ScalarBytes == nil {
+		return "", fmt.Errorf("private key is nil or scalar bytes are nil")
+	}
 	return hex.EncodeToString(pk.ScalarBytes), nil
 }
 

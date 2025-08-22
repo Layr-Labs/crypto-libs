@@ -37,7 +37,7 @@ const (
 
 // ValidateFieldOrder checks if a number is in the correct field
 func ValidateFieldOrder(n *big.Int) bool {
-	return n.Cmp(FieldModulus) < 0
+	return n.Sign() >= 0 && n.Cmp(FieldModulus) < 0
 }
 
 var (
@@ -141,7 +141,18 @@ func GenerateKeyPairFromSeed(seed []byte) (*PrivateKey, *PublicKey, error) {
 
 // NewPrivateKeyFromBytes creates a private key from bytes
 func NewPrivateKeyFromBytes(data []byte) (*PrivateKey, error) {
+
+	frOrder := fr.Modulus()
 	scalar := new(big.Int).SetBytes(data)
+
+	if scalar.Sign() == 0 {
+		return nil, fmt.Errorf("private key cannot be zero")
+	}
+
+	if scalar.Cmp(frOrder) == 0 {
+		return nil, fmt.Errorf("private key cannot be equal to field order")
+	}
+	scalar.Mod(scalar, frOrder)
 
 	return &PrivateKey{
 		scalar:      scalar,
@@ -178,6 +189,15 @@ func (pk *PrivateKey) Sign(message []byte) (*Signature, error) {
 }
 
 func (pk *PrivateKey) SignG1Point(hashPoint *bn254.G1Affine) (*Signature, error) {
+
+	if hashPoint == nil {
+		return nil, fmt.Errorf("hash point is nil")
+	}
+
+	if pk == nil || pk.scalar == nil {
+		return nil, fmt.Errorf("private key is nil or scalar is nil")
+	}
+
 	// Multiply the hash point by the private key scalar
 	sigPoint := new(bn254.G1Affine).ScalarMultiplication(hashPoint, pk.scalar)
 
@@ -225,6 +245,9 @@ func (pk *PrivateKey) Bytes() []byte {
 
 // ToHex returns the private key as a hex string
 func (pk *PrivateKey) ToHex() (string, error) {
+	if pk == nil || pk.ScalarBytes == nil {
+		return "", fmt.Errorf("private key is nil or scalar bytes are nil")
+	}
 	return hex.EncodeToString(pk.ScalarBytes), nil
 }
 
@@ -240,6 +263,10 @@ type SolidityBN254G2Point struct {
 
 // NewPublicKeyFromSolidity creates a public key from a Solidity G1 and G2 points
 func NewPublicKeyFromSolidity(g1 *SolidityBN254G1Point, g2 *SolidityBN254G2Point) (*PublicKey, error) {
+	if g1 == nil || g2 == nil || g1.X == nil || g1.Y == nil || g2.X[0] == nil || g2.X[1] == nil || g2.Y[0] == nil || g2.Y[1] == nil {
+		return nil, fmt.Errorf("invalid G1 or G2 point: %v, %v", g1, g2)
+	}
+
 	// Create a new PublicKey struct
 	pubKey := &PublicKey{}
 
@@ -705,14 +732,21 @@ func (p *G1Point) ToPrecompileFormat() ([]byte, error) {
 }
 
 // FromPrecompileFormat creates a G1 point from the Ethereum precompile format
+// The points are in uncompressed form
 func G1PointFromPrecompileFormat(data []byte) (*G1Point, error) {
 	if len(data) != G1PointSize {
 		return nil, fmt.Errorf("%w: expected %d bytes, got %d", ErrInvalidPointFormat, G1PointSize, len(data))
 	}
 	point := new(bn254.G1Affine)
-	if err := point.Unmarshal(data); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal G1 point: %w", err)
+	bytesRead, err := point.SetBytes(data)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse G1 point: %w", err)
 	}
+
+	if bytesRead != G1PointSize {
+		return nil, fmt.Errorf("%w: expected to read %d bytes, only read %d", ErrInvalidPointFormat, G1PointSize, bytesRead)
+	}
+
 	if !point.IsInSubGroup() {
 		return nil, ErrPointNotInSubgroup
 	}
@@ -801,10 +835,17 @@ func G2PointFromPrecompileFormat(data []byte) (*G2Point, error) {
 	if len(data) != G2PointSize {
 		return nil, fmt.Errorf("%w: expected %d bytes, got %d", ErrInvalidPointFormat, G2PointSize, len(data))
 	}
+
 	point := new(bn254.G2Affine)
-	if err := point.Unmarshal(data); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal G2 point: %w", err)
+	bytesRead, err := point.SetBytes(data)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse G2 point: %w", err)
 	}
+
+	if bytesRead != G2PointSize {
+		return nil, fmt.Errorf("%w: expected to read %d bytes, only read %d", ErrInvalidPointFormat, G2PointSize, bytesRead)
+	}
+
 	if !point.IsInSubGroup() {
 		return nil, ErrPointNotInSubgroup
 	}
@@ -819,7 +860,7 @@ func (p *G2Point) Sub(p2 *G2Point) *G2Point {
 
 // AddPublicKey adds the G2 point from a public key to this point
 func (p *G2Point) AddPublicKey(pk *PublicKey) *G2Point {
-	if pk.g2Point == nil {
+	if pk == nil || pk.g2Point == nil {
 		return p
 	}
 	p.G2Affine.Add(p.G2Affine, pk.g2Point)

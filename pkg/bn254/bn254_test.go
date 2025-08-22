@@ -426,15 +426,13 @@ func Test_BN254(t *testing.T) {
 			t.Error("Expected error for invalid hex string, but got none")
 		}
 
-		// Test with empty hex string (should create a zero private key)
-		zeroKey, err := NewPrivateKeyFromHexString("")
-		if err != nil {
-			t.Fatalf("Failed to create private key from empty hex string: %v", err)
+		// Test with empty hex string (should now error due to zero check)
+		_, err = NewPrivateKeyFromHexString("")
+		if err == nil {
+			t.Error("Expected error for empty hex string (creates zero key), but got none")
 		}
-
-		// Zero key should have zero bytes
-		if len(zeroKey.Bytes()) != 0 {
-			t.Error("Zero key should have empty bytes")
+		if !strings.Contains(err.Error(), "private key cannot be zero") {
+			t.Errorf("Expected error message about zero private key, got: %v", err)
 		}
 	})
 
@@ -802,22 +800,28 @@ func TestInputValidation_GenerateKeyPairFromSeed(t *testing.T) {
 func TestInputValidation_NewPrivateKeyFromBytes(t *testing.T) {
 	t.Run("NilData", func(t *testing.T) {
 		_, err := NewPrivateKeyFromBytes(nil)
-		if err != nil {
-			t.Errorf("Expected no error for nil data (should create zero key), but got: %v", err)
+		if err == nil {
+			t.Error("Expected error for nil data (creates zero key), but got none")
+		}
+		if !strings.Contains(err.Error(), "private key cannot be zero") {
+			t.Errorf("Expected error message about zero private key, got: %v", err)
 		}
 	})
 
 	t.Run("EmptyData", func(t *testing.T) {
 		_, err := NewPrivateKeyFromBytes([]byte{})
-		if err != nil {
-			t.Errorf("Expected no error for empty data (should create zero key), but got: %v", err)
+		if err == nil {
+			t.Error("Expected error for empty data (creates zero key), but got none")
+		}
+		if !strings.Contains(err.Error(), "private key cannot be zero") {
+			t.Errorf("Expected error message about zero private key, got: %v", err)
 		}
 	})
 
 	t.Run("SingleByte", func(t *testing.T) {
 		_, err := NewPrivateKeyFromBytes([]byte{0x01})
 		if err != nil {
-			t.Errorf("Expected no error for single byte, but got: %v", err)
+			t.Errorf("Expected no error for single byte (valid non-zero), but got: %v", err)
 		}
 	})
 
@@ -835,11 +839,14 @@ func TestInputValidation_NewPrivateKeyFromBytes(t *testing.T) {
 	t.Run("AllZeros", func(t *testing.T) {
 		zeros := make([]byte, 32)
 		key, err := NewPrivateKeyFromBytes(zeros)
-		if err != nil {
-			t.Errorf("Expected no error for all zeros, but got: %v", err)
+		if err == nil {
+			t.Error("Expected error for all zeros, but got none")
 		}
-		if key == nil {
-			t.Error("Expected non-nil key for all zeros")
+		if !strings.Contains(err.Error(), "private key cannot be zero") {
+			t.Errorf("Expected error message about zero private key, got: %v", err)
+		}
+		if key != nil {
+			t.Error("Expected nil key for all zeros")
 		}
 	})
 
@@ -856,13 +863,67 @@ func TestInputValidation_NewPrivateKeyFromBytes(t *testing.T) {
 			t.Error("Expected non-nil key for all ones")
 		}
 	})
+
+	t.Run("FieldOrderValue", func(t *testing.T) {
+		// BN254 field order: 21888242871839275222246405745257275088548364400416034343698204186575808495617
+		fieldOrderBytes, _ := hex.DecodeString("30644e72e131a029b85045b68181585d2833e84879b9709143e1f593f0000001")
+		_, err := NewPrivateKeyFromBytes(fieldOrderBytes)
+		if err == nil {
+			t.Error("Expected error for field order value, but got none")
+		}
+		if !strings.Contains(err.Error(), "private key cannot be equal to field order") {
+			t.Errorf("Expected error message about field order, got: %v", err)
+		}
+	})
+
+	t.Run("JustBelowFieldOrder", func(t *testing.T) {
+		// Field order - 1
+		fieldOrderMinus1, _ := hex.DecodeString("30644e72e131a029b85045b68181585d2833e84879b9709143e1f593f0000000")
+		key, err := NewPrivateKeyFromBytes(fieldOrderMinus1)
+		if err != nil {
+			t.Errorf("Expected no error for field order - 1, but got: %v", err)
+		}
+		if key == nil {
+			t.Error("Expected non-nil key for field order - 1")
+		}
+	})
+
+	t.Run("AboveFieldOrder", func(t *testing.T) {
+		// Value larger than field order - should be reduced modulo field order
+		largeValue := make([]byte, 32)
+		for i := range largeValue {
+			largeValue[i] = 0xFF
+		}
+		key, err := NewPrivateKeyFromBytes(largeValue)
+		if err != nil {
+			t.Errorf("Expected no error for value above field order (should be reduced), but got: %v", err)
+		}
+		if key == nil {
+			t.Error("Expected non-nil key for value above field order")
+		}
+	})
+
+	t.Run("SmallNonZeroValue", func(t *testing.T) {
+		// Test with a small non-zero value
+		smallValue := []byte{0x00, 0x00, 0x00, 0x01} // Represents 1
+		key, err := NewPrivateKeyFromBytes(smallValue)
+		if err != nil {
+			t.Errorf("Expected no error for small non-zero value, but got: %v", err)
+		}
+		if key == nil {
+			t.Error("Expected non-nil key for small non-zero value")
+		}
+	})
 }
 
 func TestInputValidation_NewPrivateKeyFromHexString(t *testing.T) {
 	t.Run("EmptyString", func(t *testing.T) {
 		_, err := NewPrivateKeyFromHexString("")
-		if err != nil {
-			t.Errorf("Expected no error for empty string (should create zero key), but got: %v", err)
+		if err == nil {
+			t.Error("Expected error for empty string (creates zero key), but got none")
+		}
+		if !strings.Contains(err.Error(), "private key cannot be zero") {
+			t.Errorf("Expected error message about zero private key, got: %v", err)
 		}
 	})
 
@@ -1571,12 +1632,36 @@ func TestInputValidation_G1PointOperations(t *testing.T) {
 
 	t.Run("G1Point_AddPublicKey_NilPublicKey", func(t *testing.T) {
 		point := NewZeroG1Point()
+
+		// This should panic because the method dereferences pk.g1Point without checking if pk is nil
 		defer func() {
 			if r := recover(); r == nil {
 				t.Error("Expected panic for nil public key, but got none")
 			}
 		}()
 		_ = point.AddPublicKey(nil)
+	})
+
+	t.Run("G1Point_AddPublicKey_PublicKeyWithNilG1Point", func(t *testing.T) {
+		point := NewZeroG1Point()
+		originalX := point.G1Affine.X
+		originalY := point.G1Affine.Y
+
+		// Create a public key with nil g1Point
+		pubKeyWithNilG1 := &PublicKey{
+			g1Point: nil,
+			g2Point: nil, // doesn't matter for this test
+		}
+
+		// Test with public key that has nil g1Point
+		result := point.AddPublicKey(pubKeyWithNilG1)
+		if result != point {
+			t.Error("Expected AddPublicKey to return the same point object")
+		}
+		// Verify the point is unchanged
+		if !point.G1Affine.X.Equal(&originalX) || !point.G1Affine.Y.Equal(&originalY) {
+			t.Error("Expected point to remain unchanged when adding public key with nil g1Point")
+		}
 	})
 }
 
@@ -1647,12 +1732,40 @@ func TestInputValidation_G2PointOperations(t *testing.T) {
 
 	t.Run("G2Point_AddPublicKey_NilPublicKey", func(t *testing.T) {
 		point := NewZeroG2Point()
-		defer func() {
-			if r := recover(); r == nil {
-				t.Error("Expected panic for nil public key, but got none")
-			}
-		}()
-		_ = point.AddPublicKey(nil)
+		originalX := point.G2Affine.X
+		originalY := point.G2Affine.Y
+
+		// Test with nil public key
+		result := point.AddPublicKey(nil)
+		if result != point {
+			t.Error("Expected AddPublicKey to return the same point object")
+		}
+		// Verify the point is unchanged
+		if !point.G2Affine.X.Equal(&originalX) || !point.G2Affine.Y.Equal(&originalY) {
+			t.Error("Expected point to remain unchanged when adding nil public key")
+		}
+	})
+
+	t.Run("G2Point_AddPublicKey_PublicKeyWithNilG2Point", func(t *testing.T) {
+		point := NewZeroG2Point()
+		originalX := point.G2Affine.X
+		originalY := point.G2Affine.Y
+
+		// Create a public key with nil g2Point
+		pubKeyWithNilG2 := &PublicKey{
+			g1Point: nil, // doesn't matter for this test
+			g2Point: nil,
+		}
+
+		// Test with public key that has nil g2Point
+		result := point.AddPublicKey(pubKeyWithNilG2)
+		if result != point {
+			t.Error("Expected AddPublicKey to return the same point object")
+		}
+		// Verify the point is unchanged
+		if !point.G2Affine.X.Equal(&originalX) || !point.G2Affine.Y.Equal(&originalY) {
+			t.Error("Expected point to remain unchanged when adding public key with nil g2Point")
+		}
 	})
 }
 
@@ -1662,32 +1775,141 @@ func TestInputValidation_NewPublicKeyFromSolidity(t *testing.T) {
 			X: [2]*big.Int{big.NewInt(1), big.NewInt(1)},
 			Y: [2]*big.Int{big.NewInt(1), big.NewInt(1)},
 		}
-		defer func() {
-			if r := recover(); r == nil {
-				t.Error("Expected panic for nil G1 point, but got none")
-			}
-		}()
-		_, _ = NewPublicKeyFromSolidity(nil, g2)
+		_, err := NewPublicKeyFromSolidity(nil, g2)
+		if err == nil {
+			t.Error("Expected error for nil G1 point, but got none")
+		}
+		if !strings.Contains(err.Error(), "invalid G1 or G2 point") {
+			t.Errorf("Expected error message about invalid G1 or G2 point, got: %v", err)
+		}
 	})
 
 	t.Run("NilG2Point", func(t *testing.T) {
 		// Use zero point (point at infinity) which should be in the subgroup
 		g1 := &SolidityBN254G1Point{X: big.NewInt(0), Y: big.NewInt(0)}
-		defer func() {
-			if r := recover(); r == nil {
-				t.Error("Expected panic for nil G2 point, but got none")
-			}
-		}()
-		_, _ = NewPublicKeyFromSolidity(g1, nil)
+		_, err := NewPublicKeyFromSolidity(g1, nil)
+		if err == nil {
+			t.Error("Expected error for nil G2 point, but got none")
+		}
+		if !strings.Contains(err.Error(), "invalid G1 or G2 point") {
+			t.Errorf("Expected error message about invalid G1 or G2 point, got: %v", err)
+		}
 	})
 
 	t.Run("BothNil", func(t *testing.T) {
-		defer func() {
-			if r := recover(); r == nil {
-				t.Error("Expected panic for both nil points, but got none")
-			}
-		}()
-		_, _ = NewPublicKeyFromSolidity(nil, nil)
+		_, err := NewPublicKeyFromSolidity(nil, nil)
+		if err == nil {
+			t.Error("Expected error for both nil points, but got none")
+		}
+		if !strings.Contains(err.Error(), "invalid G1 or G2 point") {
+			t.Errorf("Expected error message about invalid G1 or G2 point, got: %v", err)
+		}
+	})
+
+	t.Run("NilG1_X", func(t *testing.T) {
+		g1 := &SolidityBN254G1Point{X: nil, Y: big.NewInt(1)}
+		g2 := &SolidityBN254G2Point{
+			X: [2]*big.Int{big.NewInt(1), big.NewInt(1)},
+			Y: [2]*big.Int{big.NewInt(1), big.NewInt(1)},
+		}
+		_, err := NewPublicKeyFromSolidity(g1, g2)
+		if err == nil {
+			t.Error("Expected error for nil G1.X, but got none")
+		}
+		if !strings.Contains(err.Error(), "invalid G1 or G2 point") {
+			t.Errorf("Expected error message about invalid G1 or G2 point, got: %v", err)
+		}
+	})
+
+	t.Run("NilG1_Y", func(t *testing.T) {
+		g1 := &SolidityBN254G1Point{X: big.NewInt(1), Y: nil}
+		g2 := &SolidityBN254G2Point{
+			X: [2]*big.Int{big.NewInt(1), big.NewInt(1)},
+			Y: [2]*big.Int{big.NewInt(1), big.NewInt(1)},
+		}
+		_, err := NewPublicKeyFromSolidity(g1, g2)
+		if err == nil {
+			t.Error("Expected error for nil G1.Y, but got none")
+		}
+		if !strings.Contains(err.Error(), "invalid G1 or G2 point") {
+			t.Errorf("Expected error message about invalid G1 or G2 point, got: %v", err)
+		}
+	})
+
+	t.Run("NilG2_X0", func(t *testing.T) {
+		g1 := &SolidityBN254G1Point{X: big.NewInt(0), Y: big.NewInt(0)}
+		g2 := &SolidityBN254G2Point{
+			X: [2]*big.Int{nil, big.NewInt(1)},
+			Y: [2]*big.Int{big.NewInt(1), big.NewInt(1)},
+		}
+		_, err := NewPublicKeyFromSolidity(g1, g2)
+		if err == nil {
+			t.Error("Expected error for nil G2.X[0], but got none")
+		}
+		if !strings.Contains(err.Error(), "invalid G1 or G2 point") {
+			t.Errorf("Expected error message about invalid G1 or G2 point, got: %v", err)
+		}
+	})
+
+	t.Run("NilG2_X1", func(t *testing.T) {
+		g1 := &SolidityBN254G1Point{X: big.NewInt(0), Y: big.NewInt(0)}
+		g2 := &SolidityBN254G2Point{
+			X: [2]*big.Int{big.NewInt(1), nil},
+			Y: [2]*big.Int{big.NewInt(1), big.NewInt(1)},
+		}
+		_, err := NewPublicKeyFromSolidity(g1, g2)
+		if err == nil {
+			t.Error("Expected error for nil G2.X[1], but got none")
+		}
+		if !strings.Contains(err.Error(), "invalid G1 or G2 point") {
+			t.Errorf("Expected error message about invalid G1 or G2 point, got: %v", err)
+		}
+	})
+
+	t.Run("NilG2_Y0", func(t *testing.T) {
+		g1 := &SolidityBN254G1Point{X: big.NewInt(0), Y: big.NewInt(0)}
+		g2 := &SolidityBN254G2Point{
+			X: [2]*big.Int{big.NewInt(1), big.NewInt(1)},
+			Y: [2]*big.Int{nil, big.NewInt(1)},
+		}
+		_, err := NewPublicKeyFromSolidity(g1, g2)
+		if err == nil {
+			t.Error("Expected error for nil G2.Y[0], but got none")
+		}
+		if !strings.Contains(err.Error(), "invalid G1 or G2 point") {
+			t.Errorf("Expected error message about invalid G1 or G2 point, got: %v", err)
+		}
+	})
+
+	t.Run("NilG2_Y1", func(t *testing.T) {
+		g1 := &SolidityBN254G1Point{X: big.NewInt(0), Y: big.NewInt(0)}
+		g2 := &SolidityBN254G2Point{
+			X: [2]*big.Int{big.NewInt(1), big.NewInt(1)},
+			Y: [2]*big.Int{big.NewInt(1), nil},
+		}
+		_, err := NewPublicKeyFromSolidity(g1, g2)
+		if err == nil {
+			t.Error("Expected error for nil G2.Y[1], but got none")
+		}
+		if !strings.Contains(err.Error(), "invalid G1 or G2 point") {
+			t.Errorf("Expected error message about invalid G1 or G2 point, got: %v", err)
+		}
+	})
+
+	t.Run("MultipleNilFields", func(t *testing.T) {
+		// Test with multiple nil fields
+		g1 := &SolidityBN254G1Point{X: nil, Y: nil}
+		g2 := &SolidityBN254G2Point{
+			X: [2]*big.Int{nil, big.NewInt(1)},
+			Y: [2]*big.Int{big.NewInt(1), nil},
+		}
+		_, err := NewPublicKeyFromSolidity(g1, g2)
+		if err == nil {
+			t.Error("Expected error for multiple nil fields, but got none")
+		}
+		if !strings.Contains(err.Error(), "invalid G1 or G2 point") {
+			t.Errorf("Expected error message about invalid G1 or G2 point, got: %v", err)
+		}
 	})
 
 	t.Run("InvalidG1Point", func(t *testing.T) {
@@ -1791,8 +2013,11 @@ func TestInputValidation_PrivateKeyMethods(t *testing.T) {
 	t.Run("PrivateKeyToHexWithNilBytes", func(t *testing.T) {
 		pk := &PrivateKey{ScalarBytes: nil, scalar: nil}
 		hex, err := pk.ToHex()
-		if err != nil {
-			t.Errorf("Expected no error for ToHex with nil bytes, but got: %v", err)
+		if err == nil {
+			t.Error("Expected error for ToHex with nil bytes, but got none")
+		}
+		if !strings.Contains(err.Error(), "private key is nil or scalar bytes are nil") {
+			t.Errorf("Expected error message about nil private key or scalar bytes, got: %v", err)
 		}
 		if hex != "" {
 			t.Error("Expected empty hex string for nil bytes")
@@ -1810,18 +2035,58 @@ func TestInputValidation_PrivateKeyMethods(t *testing.T) {
 		}
 	})
 
+	t.Run("ToHexWithNilPrivateKey", func(t *testing.T) {
+		var pk *PrivateKey
+		hex, err := pk.ToHex()
+		if err == nil {
+			t.Error("Expected error for ToHex with nil private key, but got none")
+		}
+		if !strings.Contains(err.Error(), "private key is nil or scalar bytes are nil") {
+			t.Errorf("Expected error message about nil private key or scalar bytes, got: %v", err)
+		}
+		if hex != "" {
+			t.Error("Expected empty hex string for nil private key")
+		}
+	})
+
+	t.Run("ToHexWithValidPrivateKey", func(t *testing.T) {
+		// Generate a valid private key
+		validPk, _, err := GenerateKeyPair()
+		if err != nil {
+			t.Fatalf("Failed to generate key pair: %v", err)
+		}
+
+		hex, err := validPk.ToHex()
+		if err != nil {
+			t.Errorf("Expected no error for ToHex with valid private key, but got: %v", err)
+		}
+		if hex == "" {
+			t.Error("Expected non-empty hex string for valid private key")
+		}
+
+		// Verify the hex can be converted back
+		recoveredPk, err := NewPrivateKeyFromHexString(hex)
+		if err != nil {
+			t.Errorf("Failed to recover private key from hex: %v", err)
+		}
+		if !bytes.Equal(validPk.Bytes(), recoveredPk.Bytes()) {
+			t.Error("Recovered private key doesn't match original")
+		}
+	})
+
 	t.Run("SignG1Point_NilHashPoint", func(t *testing.T) {
 		privateKey, _, err := GenerateKeyPair()
 		if err != nil {
 			t.Fatalf("Failed to generate key pair: %v", err)
 		}
 
-		defer func() {
-			if r := recover(); r == nil {
-				t.Error("Expected panic for nil hash point, but got none")
-			}
-		}()
-		_, _ = privateKey.SignG1Point(nil)
+		_, err = privateKey.SignG1Point(nil)
+		if err == nil {
+			t.Error("Expected error for nil hash point, but got none")
+		}
+		if !strings.Contains(err.Error(), "hash point is nil") {
+			t.Errorf("Expected error message about nil hash point, got: %v", err)
+		}
 	})
 }
 
@@ -2094,6 +2359,38 @@ func TestInputValidation_UtilityFunctions(t *testing.T) {
 		}
 	})
 
+	t.Run("ValidateFieldOrder_NegativeNumber", func(t *testing.T) {
+		valid := ValidateFieldOrder(big.NewInt(-1))
+		if valid {
+			t.Error("Expected invalid for negative number")
+		}
+	})
+
+	t.Run("ValidateFieldOrder_Zero", func(t *testing.T) {
+		valid := ValidateFieldOrder(big.NewInt(0))
+		if !valid {
+			t.Error("Expected valid for zero")
+		}
+	})
+
+	t.Run("ValidateFieldOrder_MaxValidValue", func(t *testing.T) {
+		// Test the largest valid value (FieldModulus - 1)
+		maxValid := new(big.Int).Sub(FieldModulus, big.NewInt(1))
+		valid := ValidateFieldOrder(maxValid)
+		if !valid {
+			t.Error("Expected valid for FieldModulus - 1")
+		}
+	})
+
+	t.Run("ValidateFieldOrder_VeryLargeNumber", func(t *testing.T) {
+		// Test with a very large number much bigger than modulus
+		veryLarge := new(big.Int).Mul(FieldModulus, big.NewInt(1000))
+		valid := ValidateFieldOrder(veryLarge)
+		if valid {
+			t.Error("Expected invalid for very large number")
+		}
+	})
+
 	t.Run("SolidityHashToG1_ZeroHash", func(t *testing.T) {
 		var zeroHash [32]byte
 		point, err := SolidityHashToG1(zeroHash)
@@ -2343,10 +2640,17 @@ func TestG1PointOperations(t *testing.T) {
 		if result != point {
 			t.Error("Expected AddPublicKey to return the same point object")
 		}
+		// Verify the point was actually modified (not still zero)
+		zeroPoint := NewZeroG1Point()
+		if point.G1Affine.Equal(zeroPoint.G1Affine) {
+			t.Error("Expected point to be modified after adding a valid public key")
+		}
 	})
 
 	t.Run("AddPublicKey_PublicKeyWithNilG1Point", func(t *testing.T) {
 		point := NewZeroG1Point()
+		originalX := point.G1Affine.X
+		originalY := point.G1Affine.Y
 		pubKeyWithNilG1 := &PublicKey{
 			g1Point: nil,
 			g2Point: pubKey.g2Point,
@@ -2357,6 +2661,10 @@ func TestG1PointOperations(t *testing.T) {
 		}
 		if result != point {
 			t.Error("Expected AddPublicKey to return the same point object")
+		}
+		// Verify the point is unchanged when adding nil g1Point
+		if !point.G1Affine.X.Equal(&originalX) || !point.G1Affine.Y.Equal(&originalY) {
+			t.Error("Expected point to remain unchanged when adding public key with nil g1Point")
 		}
 	})
 
@@ -2396,10 +2704,17 @@ func TestG2PointOperations(t *testing.T) {
 		if result != point {
 			t.Error("Expected AddPublicKey to return the same point object")
 		}
+		// Verify the point was actually modified (not still zero)
+		zeroPoint := NewZeroG2Point()
+		if point.G2Affine.Equal(zeroPoint.G2Affine) {
+			t.Error("Expected point to be modified after adding a valid public key")
+		}
 	})
 
 	t.Run("AddPublicKey_PublicKeyWithNilG2Point", func(t *testing.T) {
 		point := NewZeroG2Point()
+		originalX := point.G2Affine.X
+		originalY := point.G2Affine.Y
 		pubKeyWithNilG2 := &PublicKey{
 			g1Point: pubKey.g1Point,
 			g2Point: nil,
@@ -2410,6 +2725,10 @@ func TestG2PointOperations(t *testing.T) {
 		}
 		if result != point {
 			t.Error("Expected AddPublicKey to return the same point object")
+		}
+		// Verify the point is unchanged when adding nil g2Point
+		if !point.G2Affine.X.Equal(&originalX) || !point.G2Affine.Y.Equal(&originalY) {
+			t.Error("Expected point to remain unchanged when adding public key with nil g2Point")
 		}
 	})
 
