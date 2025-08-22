@@ -33,9 +33,8 @@ type PrivateKey struct {
 
 // PublicKey represents a BLS public key
 type PublicKey struct {
-	PointBytes []byte
-	g1Point    *bls12381.G1Affine
-	g2Point    *bls12381.G2Affine
+	g1Point *bls12381.G1Affine
+	g2Point *bls12381.G2Affine
 }
 
 // Signature represents a BLS signature
@@ -66,9 +65,8 @@ func GenerateKeyPair() (*PrivateKey, *PublicKey, error) {
 
 	// Create public key
 	publicKey := &PublicKey{
-		g1Point:    pkG1Point,
-		g2Point:    pkG2Point,
-		PointBytes: pkG2Point.Marshal(), // Keep G2 point as the default for backward compatibility
+		g1Point: pkG1Point,
+		g2Point: pkG2Point,
 	}
 
 	return privateKey, publicKey, nil
@@ -105,9 +103,8 @@ func GenerateKeyPairFromSeed(seed []byte) (*PrivateKey, *PublicKey, error) {
 
 	// Create public key
 	publicKey := &PublicKey{
-		g1Point:    pkG1Point,
-		g2Point:    pkG2Point,
-		PointBytes: pkG2Point.Marshal(), // Keep G2 point as the default for backward compatibility
+		g1Point: pkG1Point,
+		g2Point: pkG2Point,
 	}
 
 	return privateKey, publicKey, nil
@@ -163,9 +160,8 @@ func GenerateKeyPairEIP2333(seed []byte, path []uint32) (*PrivateKey, *PublicKey
 
 	// Create public key
 	publicKey := &PublicKey{
-		g1Point:    pkG1Point,
-		g2Point:    pkG2Point,
-		PointBytes: pkG2Point.Marshal(), // Keep G2 point as the default for backward compatibility
+		g1Point: pkG1Point,
+		g2Point: pkG2Point,
 	}
 
 	return privateKey, publicKey, nil
@@ -214,9 +210,8 @@ func (pk *PrivateKey) Public() *PublicKey {
 	pkG1Point := new(bls12381.G1Affine).ScalarMultiplication(&g1Gen, pk.scalar)
 
 	return &PublicKey{
-		g1Point:    pkG1Point,
-		g2Point:    pkG2Point,
-		PointBytes: pkG2Point.Marshal(), // Keep G2 point as the default for backward compatibility
+		g1Point: pkG1Point,
+		g2Point: pkG2Point,
 	}
 }
 
@@ -230,49 +225,39 @@ func (pk *PrivateKey) ToHex() (string, error) {
 	return hex.EncodeToString(pk.ScalarBytes), nil
 }
 
-// Bytes returns the public key as a byte slice
-func (pk *PublicKey) Bytes() []byte {
-	return pk.PointBytes
-}
-
 // NewPublicKeyFromBytes creates a public key from bytes
-func NewPublicKeyFromBytes(data []byte) (*PublicKey, error) {
+// both g1 and g2 public keys are in compressed form following the gnark-crypto library
+func NewPublicKeyFromBytes(g1PubKey []byte, g2PubKey []byte) (*PublicKey, error) {
 	// Try to unmarshal as G2 point first
+	// both g1 and g2 size is checked in gnark-crypto library
 	g2Point := new(bls12381.G2Affine)
-	if err := g2Point.Unmarshal(data); err == nil {
-		// If successful, compute the corresponding G1 point
-		// Note: This is an approximation since we don't have the original scalar
-		// In practice, you might want to store both points or use a different approach
-		g1Point := new(bls12381.G1Affine).ScalarMultiplication(&g1Gen, big.NewInt(1))
-		return &PublicKey{
-			g1Point:    g1Point,
-			g2Point:    g2Point,
-			PointBytes: data,
-		}, nil
+	if err := g2Point.Unmarshal(g2PubKey); err != nil {
+		return nil, fmt.Errorf("invalid g2 public key bytes")
 	}
 
 	// Try to unmarshal as G1 point
 	g1Point := new(bls12381.G1Affine)
-	if err := g1Point.Unmarshal(data); err == nil {
-		// If successful, compute the corresponding G2 point
-		// Note: This is an approximation since we don't have the original scalar
-		g2Point := new(bls12381.G2Affine).ScalarMultiplication(&g2Gen, big.NewInt(1))
-		return &PublicKey{
-			g1Point:    g1Point,
-			g2Point:    g2Point,
-			PointBytes: data,
-		}, nil
+	if err := g1Point.Unmarshal(g1PubKey); err != nil {
+		return nil, fmt.Errorf("invalid g1 public key bytes")
 	}
-
-	return nil, fmt.Errorf("invalid public key bytes: could not unmarshal as either G1 or G2 point")
+	return &PublicKey{
+		g1Point: g1Point,
+		g2Point: g2Point,
+	}, nil
 }
 
-func NewPublicKeyFromHexString(pubHex string) (*PublicKey, error) {
-	b, err := hex.DecodeString(pubHex)
+// NewPublicKeyFromHexString creates a public key from hex strings
+// both g1 and g2 public keys are in compressed form following the gnark-crypto library
+func NewPublicKeyFromHexString(g1PubHex string, g2PubHex string) (*PublicKey, error) {
+	g1PubBytes, err := hex.DecodeString(g1PubHex)
 	if err != nil {
-		return nil, fmt.Errorf("failed to decode hex string: %w", err)
+		return nil, fmt.Errorf("failed to decode g1 public key hex string: %w", err)
 	}
-	return NewPublicKeyFromBytes(b)
+	g2PubBytes, err := hex.DecodeString(g2PubHex)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode g2 public key hex string: %w", err)
+	}
+	return NewPublicKeyFromBytes(g1PubBytes, g2PubBytes)
 }
 
 // Bytes returns the signature as a byte slice

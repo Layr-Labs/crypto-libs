@@ -66,8 +66,9 @@ func (s *Scheme) NewPrivateKeyFromHexString(hex string) (signing.PrivateKey, err
 }
 
 // NewPublicKeyFromBytes creates a public key from bytes
-func (s *Scheme) NewPublicKeyFromBytes(data []byte) (signing.PublicKey, error) {
-	pubKey, err := NewPublicKeyFromBytes(data)
+// both g1 and g2 public keys are in compressed form following the gnark-crypto library
+func (s *Scheme) NewPublicKeyFromBytes(g1PubKey []byte, g2PubKey []byte) (signing.PublicKey, error) {
+	pubKey, err := NewPublicKeyFromBytes(g1PubKey, g2PubKey)
 	if err != nil {
 		return nil, err
 	}
@@ -83,8 +84,10 @@ func (s *Scheme) NewSignatureFromBytes(data []byte) (signing.Signature, error) {
 	return &signatureAdapter{sig}, nil
 }
 
-func (s *Scheme) NewPublicKeyFromHexString(hex string) (signing.PublicKey, error) {
-	pubKey, err := NewPublicKeyFromHexString(hex)
+// NewPublicKeyFromHexString creates a public key from hex strings
+// both g1 and g2 public keys are in compressed form following the gnark-crypto library
+func (s *Scheme) NewPublicKeyFromHexString(g1PubHex string, g2PubHex string) (signing.PublicKey, error) {
+	pubKey, err := NewPublicKeyFromHexString(g1PubHex, g2PubHex)
 	if err != nil {
 		return nil, err
 	}
@@ -256,7 +259,19 @@ type publicKeyAdapter struct {
 
 // Bytes implements the signing.PublicKey interface
 func (a *publicKeyAdapter) Bytes() []byte {
-	return a.pk.Bytes()
+	return []byte{}
+}
+
+// G1Bytes implements the signing.PublicKey interface
+func (a *publicKeyAdapter) G1Bytes() []byte {
+	g1Bytes := a.pk.GetG1Point().Bytes()
+	return g1Bytes[:]
+}
+
+// G2Bytes implements the signing.PublicKey interface
+func (a *publicKeyAdapter) G2Bytes() []byte {
+	g2Bytes := a.pk.GetG2Point().Bytes()
+	return g2Bytes[:]
 }
 
 // signatureAdapter adapts the BLS381 signature to the generic interface

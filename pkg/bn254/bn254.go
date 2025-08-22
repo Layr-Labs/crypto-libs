@@ -58,9 +58,8 @@ type PrivateKey struct {
 
 // PublicKey represents a BLS public key
 type PublicKey struct {
-	PointBytes []byte
-	g1Point    *bn254.G1Affine
-	g2Point    *bn254.G2Affine
+	g1Point *bn254.G1Affine
+	g2Point *bn254.G2Affine
 }
 
 // Signature represents a BLS signature
@@ -95,9 +94,8 @@ func GenerateKeyPair() (*PrivateKey, *PublicKey, error) {
 
 	// Create public key
 	publicKey := &PublicKey{
-		g1Point:    pkG1Point,
-		g2Point:    pkG2Point,
-		PointBytes: pkG2Point.Marshal(), // Keep G2 point as the default for backward compatibility
+		g1Point: pkG1Point,
+		g2Point: pkG2Point,
 	}
 
 	return privateKey, publicKey, nil
@@ -134,9 +132,8 @@ func GenerateKeyPairFromSeed(seed []byte) (*PrivateKey, *PublicKey, error) {
 
 	// Create public key
 	publicKey := &PublicKey{
-		g1Point:    pkG1Point,
-		g2Point:    pkG2Point,
-		PointBytes: pkG2Point.Marshal(), // Keep G2 point as the default for backward compatibility
+		g1Point: pkG1Point,
+		g2Point: pkG2Point,
 	}
 
 	return privateKey, publicKey, nil
@@ -216,9 +213,8 @@ func (pk *PrivateKey) Public() *PublicKey {
 	pkG1Point := new(bn254.G1Affine).ScalarMultiplication(&g1Gen, pk.scalar)
 
 	return &PublicKey{
-		g1Point:    pkG1Point,
-		g2Point:    pkG2Point,
-		PointBytes: pkG2Point.Marshal(), // Keep G2 point as the default for backward compatibility
+		g1Point: pkG1Point,
+		g2Point: pkG2Point,
 	}
 }
 
@@ -230,11 +226,6 @@ func (pk *PrivateKey) Bytes() []byte {
 // ToHex returns the private key as a hex string
 func (pk *PrivateKey) ToHex() (string, error) {
 	return hex.EncodeToString(pk.ScalarBytes), nil
-}
-
-// Bytes returns the public key as a byte slice
-func (pk *PublicKey) Bytes() []byte {
-	return pk.PointBytes
 }
 
 type SolidityBN254G1Point struct {
@@ -275,50 +266,54 @@ func NewPublicKeyFromSolidity(g1 *SolidityBN254G1Point, g2 *SolidityBN254G2Point
 		return nil, ErrPointNotInSubgroup
 	}
 
-	// Marshal the G2 point to bytes to fill the PointBytes field
-	pointBytes := pubKey.g2Point.Marshal()
-	pubKey.PointBytes = pointBytes
-
 	return pubKey, nil
 }
 
 // NewPublicKeyFromBytes creates a public key from bytes
-func NewPublicKeyFromBytes(data []byte) (*PublicKey, error) {
+// both g1 and g2 public keys are in compressed form following the gnark-crypto library
+func NewPublicKeyFromBytes(g1PubKey []byte, g2PubKey []byte) (*PublicKey, error) {
 	// Try to unmarshal as G2 point first
 	g2Point := new(bn254.G2Affine)
-	if err := g2Point.Unmarshal(data); err == nil {
-		// If successful, compute the corresponding G1 point
-		// Note: This is an approximation since we don't have the original scalar
-		g1Point := new(bn254.G1Affine).ScalarMultiplication(&g1Gen, big.NewInt(1))
-		return &PublicKey{
-			g1Point:    g1Point,
-			g2Point:    g2Point,
-			PointBytes: data,
-		}, nil
+	if err := g2Point.Unmarshal(g2PubKey); err != nil {
+		return nil, fmt.Errorf("invalid g2 public key bytes")
 	}
-
-	// Try to unmarshal as G1 point
 	g1Point := new(bn254.G1Affine)
-	if err := g1Point.Unmarshal(data); err == nil {
-		// If successful, compute the corresponding G2 point
-		// Note: This is an approximation since we don't have the original scalar
-		g2Point := new(bn254.G2Affine).ScalarMultiplication(&g2Gen, big.NewInt(1))
-		return &PublicKey{
-			g1Point:    g1Point,
-			g2Point:    g2Point,
-			PointBytes: data,
-		}, nil
+	if err := g1Point.Unmarshal(g1PubKey); err != nil {
+		return nil, fmt.Errorf("invalid g1 public key bytes")
 	}
 
-	return nil, fmt.Errorf("invalid public key bytes: could not unmarshal as either G1 or G2 point")
+	// validate that the G1 and G2 point are from the same private key
+	// e(Pk1, G2) == e(G1, Pk2)
+	pairing1, err := bn254.Pair([]bn254.G1Affine{*g1Point}, []bn254.G2Affine{g2Gen})
+	if err != nil {
+		return nil, fmt.Errorf("failed to pair G1 point and G2 generator: %w", err)
+	}
+	pairing2, err := bn254.Pair([]bn254.G1Affine{g1Gen}, []bn254.G2Affine{*g2Point})
+	if err != nil {
+		return nil, fmt.Errorf("failed to pair G1 generator and G2 point: %w", err)
+	}
+	if !pairing1.Equal(&pairing2) {
+		return nil, fmt.Errorf("G1 and G2 points are not from the same private key")
+	}
+
+	return &PublicKey{
+		g1Point: g1Point,
+		g2Point: g2Point,
+	}, nil
 }
 
-func NewPublicKeyFromHexString(pubHex string) (*PublicKey, error) {
-	b, err := hex.DecodeString(pubHex)
+// NewPublicKeyFromHexString creates a public key from hex strings
+// both g1 and g2 public keys are in compressed form following the gnark-crypto library
+func NewPublicKeyFromHexString(g1PubHex string, g2PubHex string) (*PublicKey, error) {
+	g1PubBytes, err := hex.DecodeString(g1PubHex)
 	if err != nil {
 		return nil, fmt.Errorf("failed to decode hex string: %w", err)
 	}
-	return NewPublicKeyFromBytes(b)
+	g2PubBytes, err := hex.DecodeString(g2PubHex)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode g2 public key hex string: %w", err)
+	}
+	return NewPublicKeyFromBytes(g1PubBytes, g2PubBytes)
 }
 
 // Bytes returns the signature as a byte slice
@@ -668,8 +663,7 @@ func AggregatePublicKeys(pubKeys []*PublicKey) (*PublicKey, error) {
 	result.FromJacobian(aggPk)
 
 	return &PublicKey{
-		g2Point:    result,
-		PointBytes: result.Marshal(),
+		g2Point: result,
 	}, nil
 }
 
@@ -742,11 +736,17 @@ func (p *G1Point) AddPublicKey(pk *PublicKey) *G1Point {
 
 // GetG1Point returns the G1 point of the public key
 func (pk *PublicKey) GetG1Point() *bn254.G1Affine {
+	if pk.g1Point == nil || pk.g1Point.Bytes() == [32]byte{64, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0} {
+		return nil
+	}
 	return pk.g1Point
 }
 
 // GetG2Point returns the G2 point of the public key
 func (pk *PublicKey) GetG2Point() *bn254.G2Affine {
+	if pk.g2Point == nil || pk.g2Point.Bytes() == [64]byte{64, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0} {
+		return nil
+	}
 	return pk.g2Point
 }
 
@@ -832,6 +832,5 @@ func (pk *PublicKey) Sub(other *PublicKey) *PublicKey {
 		return pk
 	}
 	pk.g2Point.Sub(pk.g2Point, other.g2Point)
-	pk.PointBytes = pk.g2Point.Marshal()
 	return pk
 }
