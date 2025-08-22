@@ -2,8 +2,9 @@ package integration
 
 import (
 	"bytes"
-	"github.com/Layr-Labs/crypto-libs/pkg/signing"
 	"testing"
+
+	"github.com/Layr-Labs/crypto-libs/pkg/signing"
 
 	"github.com/Layr-Labs/crypto-libs/pkg/bls381"
 	"github.com/Layr-Labs/crypto-libs/pkg/bn254"
@@ -120,14 +121,18 @@ func testSerializationDeserialization(t *testing.T, scheme signing.SigningScheme
 
 	// Serialize keys and signature
 	privateKeyBytes := privateKey.Bytes()
-	publicKeyBytes := publicKey.Bytes()
+	g1PubKeyBytes := publicKey.G1Bytes()
+	g2PubKeyBytes := publicKey.G2Bytes()
 	signatureBytes := signature.Bytes()
 
 	// Ensure serialized bytes are not empty
 	if len(privateKeyBytes) == 0 {
 		t.Error("Serialized private key is empty")
 	}
-	if len(publicKeyBytes) == 0 {
+	if len(g1PubKeyBytes) == 0 {
+		t.Error("Serialized public key is empty")
+	}
+	if len(g2PubKeyBytes) == 0 {
 		t.Error("Serialized public key is empty")
 	}
 	if len(signatureBytes) == 0 {
@@ -141,7 +146,7 @@ func testSerializationDeserialization(t *testing.T, scheme signing.SigningScheme
 	}
 
 	// Deserialize public key
-	recoveredPubKey, err := scheme.NewPublicKeyFromBytes(publicKeyBytes)
+	recoveredPubKey, err := scheme.NewPublicKeyFromBytes(g1PubKeyBytes, g2PubKeyBytes)
 	if err != nil {
 		t.Fatalf("Failed to deserialize public key: %v", err)
 	}
@@ -153,8 +158,12 @@ func testSerializationDeserialization(t *testing.T, scheme signing.SigningScheme
 	}
 
 	// Verify the deserialized public key bytes match the original
-	recoveredPubKeyBytes := recoveredPubKey.Bytes()
-	if !bytes.Equal(recoveredPubKeyBytes, publicKeyBytes) {
+	recoveredPubKeyG1Bytes := recoveredPubKey.G1Bytes()
+	if !bytes.Equal(recoveredPubKeyG1Bytes, g1PubKeyBytes) {
+		t.Error("Deserialized public key bytes don't match original")
+	}
+	recoveredPubKeyG2Bytes := recoveredPubKey.G2Bytes()
+	if !bytes.Equal(recoveredPubKeyG2Bytes, g2PubKeyBytes) {
 		t.Error("Deserialized public key bytes don't match original")
 	}
 

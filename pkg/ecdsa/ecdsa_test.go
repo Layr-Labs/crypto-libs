@@ -1609,7 +1609,7 @@ func TestInputValidation_SchemeAdapterMethods(t *testing.T) {
 	})
 
 	t.Run("SchemeNewPublicKeyFromBytes_Invalid", func(t *testing.T) {
-		_, err := scheme.NewPublicKeyFromBytes([]byte{})
+		_, err := scheme.NewPublicKeyFromBytes([]byte{}, nil)
 		if err == nil {
 			t.Error("Expected error for empty bytes, but got none")
 		}

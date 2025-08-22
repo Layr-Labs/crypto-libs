@@ -269,10 +269,15 @@ func deriveKeyFromPassword(password string, kdf Module) ([]byte, error) {
 			return nil, fmt.Errorf("p parameter too high: must be at most 16, got %d", pInt)
 		}
 
+		const maxMemory = 1024 * 1024 * 1024 // 1GB
+		if nInt > maxMemory/128/rInt || rInt > maxMemory/128/nInt {
+			return nil, fmt.Errorf("scrypt parameters would require too much memory (overflow protection)")
+		}
+
 		// Memory usage validation - prevent excessive memory consumption
 		// Memory usage is approximately 128 * N * r bytes
 		memoryUsage := 128 * nInt * rInt
-		if memoryUsage > 1024*1024*1024 { // 1GB limit
+		if memoryUsage > maxMemory { // 1GB limit
 			return nil, fmt.Errorf("scrypt parameters would require too much memory: %d bytes (max 1GB)", memoryUsage)
 		}
 
@@ -305,6 +310,9 @@ func verifyPassword(decryptionKey []byte, checksum Module, cipherMessage string)
 		return false, fmt.Errorf("checksum message cannot be empty")
 	}
 
+	if len(decryptionKey) < 32 {
+		return false, fmt.Errorf("decryption key too short: expected 32 bytes, got %d", len(decryptionKey))
+	}
 	// Get the second 16 bytes of the decryption key
 	dkSlice := decryptionKey[16:32]
 
@@ -329,6 +337,10 @@ func verifyPassword(decryptionKey []byte, checksum Module, cipherMessage string)
 func decryptSecret(decryptionKey []byte, cipher Module) ([]byte, error) {
 	if len(decryptionKey) == 0 {
 		return nil, fmt.Errorf("decryption key cannot be nil or 0 bytes")
+	}
+
+	if len(decryptionKey) < 16 {
+		return nil, fmt.Errorf("decryption key too short: expected at least 16 bytes, got %d", len(decryptionKey))
 	}
 
 	if cipher.Function == "" {
@@ -732,7 +744,7 @@ func GenerateKeystore(privateKey signing.PrivateKey, password, curveType string,
 
 	// Get the public key
 	publicKey := privateKey.Public()
-	pubkeyBytes := publicKey.Bytes()
+	pubkeyBytes := publicKey.G2Bytes()
 	pubkeyHex := hex.EncodeToString(pubkeyBytes)
 
 	// Generate salt and IV

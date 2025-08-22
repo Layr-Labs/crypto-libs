@@ -28,8 +28,14 @@ type PrivateKey interface {
 
 // PublicKey is the interface that all public key implementations must satisfy
 type PublicKey interface {
-	// Bytes serializes the public key to bytes
+	// Bytes serializes the ecdsa public key to bytes
 	Bytes() []byte
+
+	// G1Bytes serializes the BN254/BLS12381 public key to bytes
+	G1Bytes() []byte
+
+	// G2Bytes serializes the BN254/BLS12381 public key to bytes
+	G2Bytes() []byte
 }
 
 // Signature is the interface that all signature implementations must satisfy
@@ -60,10 +66,10 @@ type SigningScheme interface {
 	NewPrivateKeyFromHexString(hex string) (PrivateKey, error)
 
 	// NewPublicKeyFromBytes creates a public key from bytes
-	NewPublicKeyFromBytes(data []byte) (PublicKey, error)
+	NewPublicKeyFromBytes(g1PubKey []byte, g2PubKey []byte) (PublicKey, error)
 
 	// NewPublicKeyFromHexString creates a public key from a hex string
-	NewPublicKeyFromHexString(hex string) (PublicKey, error)
+	NewPublicKeyFromHexString(g1PubHex string, g2PubHex string) (PublicKey, error)
 
 	// NewSignatureFromBytes creates a signature from bytes
 	NewSignatureFromBytes(data []byte) (Signature, error)

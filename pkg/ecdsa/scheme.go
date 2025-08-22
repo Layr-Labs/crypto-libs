@@ -63,7 +63,8 @@ func (s *Scheme) NewPrivateKeyFromHexString(hex string) (signing.PrivateKey, err
 }
 
 // NewPublicKeyFromBytes creates a public key from bytes
-func (s *Scheme) NewPublicKeyFromBytes(data []byte) (signing.PublicKey, error) {
+// both g1 and g2 public keys are in compressed form following the gnark-crypto library
+func (s *Scheme) NewPublicKeyFromBytes(data []byte, _ []byte) (signing.PublicKey, error) {
 	pubKey, err := NewPublicKeyFromBytes(data)
 	if err != nil {
 		return nil, err
@@ -72,8 +73,9 @@ func (s *Scheme) NewPublicKeyFromBytes(data []byte) (signing.PublicKey, error) {
 }
 
 // NewPublicKeyFromHexString creates a public key from a hex string
-func (s *Scheme) NewPublicKeyFromHexString(hex string) (signing.PublicKey, error) {
-	pubKey, err := NewPublicKeyFromHexString(hex)
+// both g1 and g2 public keys are in compressed form following the gnark-crypto library
+func (s *Scheme) NewPublicKeyFromHexString(data string, _ string) (signing.PublicKey, error) {
+	pubKey, err := NewPublicKeyFromHexString(data)
 	if err != nil {
 		return nil, err
 	}
@@ -181,6 +183,16 @@ type publicKeyAdapter struct {
 // Bytes implements the signing.PublicKey interface
 func (a *publicKeyAdapter) Bytes() []byte {
 	return a.pk.Bytes()
+}
+
+// G1Bytes implements the signing.PublicKey interface
+func (a *publicKeyAdapter) G1Bytes() []byte {
+	return []byte{}
+}
+
+// G2Bytes implements the signing.PublicKey interface
+func (a *publicKeyAdapter) G2Bytes() []byte {
+	return []byte{}
 }
 
 // signatureAdapter adapts the ECDSA signature to the generic interface

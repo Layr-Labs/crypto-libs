@@ -181,8 +181,9 @@ func SaveToKeystoreWithCurveType(privateKey signing.PrivateKey, filePath, passwo
 	curveType = DetermineCurveType(curveType)
 
 	// Create the keystore structure
+
 	encryptedKey := LegacyKeystore{
-		PublicKey: fmt.Sprintf("%x", publicKey.Bytes()),
+		PublicKey: fmt.Sprintf("%x", publicKey.G2Bytes()),
 		Crypto:    cryptoStruct,
 		UUID:      id.String(),
 		Version:   4,
