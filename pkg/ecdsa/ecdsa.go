@@ -214,11 +214,11 @@ func (pk *PrivateKey) Sign(hash []byte) (*Signature, error) {
 		return nil, fmt.Errorf("signature S component cannot be zero")
 	}
 
-	// Check for signature malleability (high S values)
 	// Ensure S is in the lower half of the curve order to prevent malleability
 	halfOrder := new(big.Int).Rsh(n, 1) // n/2
 	if s.Cmp(halfOrder) > 0 {
-		return nil, fmt.Errorf("signature S component too high (malleability risk)")
+		s.Sub(secp256k1.S256().Params().N, s)
+		v ^= 1
 	}
 
 	return &Signature{R: r, S: s, V: v}, nil
@@ -438,6 +438,11 @@ func (sig *Signature) Verify(publicKey *PublicKey, hash [32]byte) (bool, error) 
 		return false, fmt.Errorf("public key is not on curve")
 	}
 
+	halfOrder := new(big.Int).Rsh(secp256k1.S256().Params().N, 1)
+	if sig.S.Cmp(halfOrder) > 0 {
+		return false, fmt.Errorf("signature S value too high (malleable)")
+	}
+
 	// Create ecdsa.PublicKey for verification
 	ecdsaPubKey := &ecdsa.PublicKey{
 		Curve: curve,
@@ -457,6 +462,11 @@ func (sig *Signature) VerifyWithAddress(hash []byte, expectedAddr common.Address
 	// Adjust V for crypto.Ecrecover (expects 0 or 1, not 27/28)
 	if sigBytes[64] >= 27 {
 		sigBytes[64] -= 27
+	}
+
+	halfOrder := new(big.Int).Rsh(secp256k1.S256().Params().N, 1)
+	if sig.S.Cmp(halfOrder) > 0 {
+		return false, fmt.Errorf("signature S value too high (malleable)")
 	}
 
 	// Recover public key from signature

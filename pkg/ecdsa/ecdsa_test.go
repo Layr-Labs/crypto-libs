@@ -208,6 +208,152 @@ func TestSecp256k1SigningAndVerification(t *testing.T) {
 	}
 }
 
+// TestSignDeterministic tests that signing is deterministic for same input
+func TestSignDeterministic(t *testing.T) {
+	// Use a known private key for deterministic testing
+	privKeyHex := "c87509a1c067bbde78beb793e6fa76530b6382a4c0241e5e4a9ec0a0f44dc0d3"
+	privKey, err := NewPrivateKeyFromHexString(privKeyHex)
+	if err != nil {
+		t.Fatalf("Failed to create private key: %v", err)
+	}
+
+	// Test with multiple known hashes
+	testHashes := [][]byte{
+		{0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f, 0x10,
+			0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19, 0x1a, 0x1b, 0x1c, 0x1d, 0x1e, 0x1f, 0x20},
+		{0xff, 0xfe, 0xfd, 0xfc, 0xfb, 0xfa, 0xf9, 0xf8, 0xf7, 0xf6, 0xf5, 0xf4, 0xf3, 0xf2, 0xf1, 0xf0,
+			0xef, 0xee, 0xed, 0xec, 0xeb, 0xea, 0xe9, 0xe8, 0xe7, 0xe6, 0xe5, 0xe4, 0xe3, 0xe2, 0xe1, 0xe0},
+		make([]byte, 32), // Zero hash
+	}
+
+	for i, hash := range testHashes {
+		// Sign the same hash multiple times
+		sig1, err := privKey.Sign(hash)
+		if err != nil {
+			t.Fatalf("Failed to sign hash %d (attempt 1): %v", i, err)
+		}
+
+		sig2, err := privKey.Sign(hash)
+		if err != nil {
+			t.Fatalf("Failed to sign hash %d (attempt 2): %v", i, err)
+		}
+
+		// Signatures should be identical (deterministic)
+		if sig1.R.Cmp(sig2.R) != 0 {
+			t.Fatalf("Hash %d: R values differ between signatures: %s vs %s", i, sig1.R.String(), sig2.R.String())
+		}
+		if sig1.S.Cmp(sig2.S) != 0 {
+			t.Fatalf("Hash %d: S values differ between signatures: %s vs %s", i, sig1.S.String(), sig2.S.String())
+		}
+		if sig1.V != sig2.V {
+			t.Fatalf("Hash %d: V values differ between signatures: %d vs %d", i, sig1.V, sig2.V)
+		}
+	}
+}
+
+// TestSignBoundaryConditions tests signing with boundary condition values
+func TestSignBoundaryConditions(t *testing.T) {
+	privKey, pubKey, err := GenerateKeyPair()
+	if err != nil {
+		t.Fatalf("Failed to generate key pair: %v", err)
+	}
+
+	// Test boundary hash values (skip all-zeros as it may cause edge cases in some implementations)
+	testCases := []struct {
+		name string
+		hash []byte
+	}{
+		{
+			name: "All ones",
+			hash: []byte{0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+				0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff},
+		},
+		{
+			name: "Alternating pattern",
+			hash: []byte{0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa,
+				0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa},
+		},
+		{
+			name: "Incrementing pattern",
+			hash: []byte{0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f,
+				0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19, 0x1a, 0x1b, 0x1c, 0x1d, 0x1e, 0x1f},
+		},
+		{
+			name: "Near zero",
+			hash: []byte{0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+				0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			signature, err := privKey.Sign(tc.hash)
+			if err != nil {
+				t.Fatalf("Failed to sign %s hash: %v", tc.name, err)
+			}
+
+			// Verify signature components are non-zero and not nil
+			if signature == nil {
+				t.Fatalf("%s: signature is nil", tc.name)
+			}
+			if signature.R == nil || signature.S == nil {
+				t.Fatalf("%s: signature components are nil", tc.name)
+			}
+			if signature.R.Sign() == 0 {
+				t.Fatalf("%s: signature R component is zero", tc.name)
+			}
+			if signature.S.Sign() == 0 {
+				t.Fatalf("%s: signature S component is zero", tc.name)
+			}
+
+			// Verify signature is normalized (s in lower half)
+			n := secp256k1.S256().Params().N
+			halfOrder := new(big.Int).Rsh(n, 1)
+			if signature.S.Cmp(halfOrder) > 0 {
+				t.Fatalf("%s: signature s-value too high: %s > %s", tc.name, signature.S.String(), halfOrder.String())
+			}
+
+			// Verify public key is not nil
+			if pubKey == nil || pubKey.X == nil || pubKey.Y == nil {
+				t.Fatalf("%s: public key or coordinates are nil", tc.name)
+			}
+
+			// Verify signature is valid
+			var hashArray [32]byte
+			copy(hashArray[:], tc.hash)
+			valid, err := signature.Verify(pubKey, hashArray)
+			if err != nil {
+				t.Fatalf("Failed to verify %s signature: %v", tc.name, err)
+			}
+			if !valid {
+				t.Fatalf("%s signature verification failed", tc.name)
+			}
+		})
+	}
+}
+
+// TestSignWithInvalidPrivateKey tests signing with invalid private keys
+func TestSignWithInvalidPrivateKey(t *testing.T) {
+	// Test with private key that exceeds curve order
+	n := secp256k1.S256().Params().N
+	invalidD := new(big.Int).Add(n, big.NewInt(1)) // n + 1
+
+	invalidPrivKey := &PrivateKey{D: invalidD}
+
+	hash := make([]byte, 32)
+	for i := range hash {
+		hash[i] = byte(i)
+	}
+
+	_, err := invalidPrivKey.Sign(hash)
+	if err == nil {
+		t.Fatal("Expected error for invalid private key, but got none")
+	}
+	if !strings.Contains(err.Error(), "exceeds curve order") {
+		t.Fatalf("Expected curve order error, got: %v", err)
+	}
+}
+
 func TestSchemeImplementsInterface(t *testing.T) {
 	scheme := NewScheme()
 
