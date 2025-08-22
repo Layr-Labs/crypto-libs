@@ -32,14 +32,21 @@ func Test_BN254(t *testing.T) {
 		}
 
 		// Verify that the public key bytes are not empty
-		if len(publicKey.Bytes()) == 0 {
+		if len(publicKey.GetG1Point().Marshal()) == 0 || len(publicKey.GetG2Point().Marshal()) == 0 {
 			t.Error("Public key bytes are empty")
 		}
 
 		// Ensure Public() derives the correct public key
 		derivedPublicKey := privateKey.Public()
-		if !bytes.Equal(derivedPublicKey.Bytes(), publicKey.Bytes()) {
-			t.Error("Derived public key doesn't match the generated public key")
+		g1BytesDerived := derivedPublicKey.GetG1Point().Marshal()
+		g1Bytes := publicKey.GetG1Point().Marshal()
+		g2BytesDerived := derivedPublicKey.GetG2Point().Marshal()
+		g2Bytes := publicKey.GetG2Point().Marshal()
+		if !bytes.Equal(g1BytesDerived, g1Bytes) {
+			t.Error("Derived g1 public key doesn't match the generated public key")
+		}
+		if !bytes.Equal(g2BytesDerived, g2Bytes) {
+			t.Error("Derived g2 public key doesn't match the generated public key")
 		}
 	})
 
@@ -63,8 +70,15 @@ func Test_BN254(t *testing.T) {
 		if !bytes.Equal(privateKey1.Bytes(), privateKey2.Bytes()) {
 			t.Error("Private keys generated from the same seed are not equal")
 		}
-		if !bytes.Equal(publicKey1.Bytes(), publicKey2.Bytes()) {
-			t.Error("Public keys generated from the same seed are not equal")
+		g1Bytes1 := publicKey1.GetG1Point().Marshal()
+		g2Bytes1 := publicKey1.GetG2Point().Marshal()
+		g1Bytes2 := publicKey2.GetG1Point().Marshal()
+		g2Bytes2 := publicKey2.GetG2Point().Marshal()
+		if !bytes.Equal(g1Bytes1, g1Bytes2) {
+			t.Error("Public keys g1 generated from the same seed are not equal")
+		}
+		if !bytes.Equal(g2Bytes1, g2Bytes2) {
+			t.Error("Public keys g2 generated from the same seed are not equal")
 		}
 
 		// Test with a different seed
@@ -78,8 +92,15 @@ func Test_BN254(t *testing.T) {
 		if bytes.Equal(privateKey1.Bytes(), privateKey3.Bytes()) {
 			t.Error("Private keys generated from different seeds are equal")
 		}
-		if bytes.Equal(publicKey1.Bytes(), publicKey3.Bytes()) {
-			t.Error("Public keys generated from different seeds are equal")
+		g1Bytes1 = publicKey1.GetG1Point().Marshal()
+		g2Bytes1 = publicKey1.GetG2Point().Marshal()
+		g1Bytes3 := publicKey3.GetG1Point().Marshal()
+		g2Bytes3 := publicKey3.GetG2Point().Marshal()
+		if bytes.Equal(g1Bytes1, g1Bytes3) {
+			t.Error("Public keys g1 generated from different seeds are equal")
+		}
+		if bytes.Equal(g2Bytes1, g2Bytes3) {
+			t.Error("Public keys g2 generated from different seeds are equal")
 		}
 
 		// Make sure keys can be used for signing and verification
@@ -120,8 +141,9 @@ func Test_BN254(t *testing.T) {
 		}
 
 		// Test public key serialization/deserialization
-		publicKeyBytes := publicKey.Bytes()
-		deserializedPublicKey, err := NewPublicKeyFromBytes(publicKeyBytes)
+		g1Bytes := publicKey.GetG1Point().Bytes()
+		g2Bytes := publicKey.GetG2Point().Bytes()
+		deserializedPublicKey, err := NewPublicKeyFromBytes(g1Bytes[:], g2Bytes[:])
 		if err != nil {
 			t.Fatalf("Failed to deserialize public key: %v", err)
 		}
@@ -548,24 +570,17 @@ func TestPublicKeyFromBytes(t *testing.T) {
 		t.Fatalf("Failed to generate key pair: %v", err)
 	}
 
-	// Test G2 point bytes
+	g1Bytes := pk.GetG1Point().Marshal()
 	g2Bytes := pk.GetG2Point().Marshal()
-	pkFromG2, err := NewPublicKeyFromBytes(g2Bytes)
+	pkRetrieved, err := NewPublicKeyFromBytes(g1Bytes, g2Bytes)
 	if err != nil {
 		t.Fatalf("Failed to create public key from G2 bytes: %v", err)
 	}
-	if !pkFromG2.GetG2Point().Equal(pk.GetG2Point()) {
-		t.Fatal("G2 point mismatch after unmarshaling")
-	}
-
-	// Test G1 point bytes
-	g1Bytes := pk.GetG1Point().Marshal()
-	pkFromG1, err := NewPublicKeyFromBytes(g1Bytes)
-	if err != nil {
-		t.Fatalf("Failed to create public key from G1 bytes: %v", err)
-	}
-	if !pkFromG1.GetG1Point().Equal(pk.GetG1Point()) {
+	if !pkRetrieved.GetG1Point().Equal(pk.GetG1Point()) {
 		t.Fatal("G1 point mismatch after unmarshaling")
+	}
+	if !pkRetrieved.GetG2Point().Equal(pk.GetG2Point()) {
+		t.Fatal("G2 point mismatch after unmarshaling")
 	}
 }
 
@@ -1049,14 +1064,14 @@ func TestInputValidation_SolidityCompatibleFunctions(t *testing.T) {
 
 func TestInputValidation_NewPublicKeyFromBytes(t *testing.T) {
 	t.Run("NilData", func(t *testing.T) {
-		_, err := NewPublicKeyFromBytes(nil)
+		_, err := NewPublicKeyFromBytes(nil, nil)
 		if err == nil {
 			t.Error("Expected error for nil data, but got none")
 		}
 	})
 
 	t.Run("EmptyData", func(t *testing.T) {
-		_, err := NewPublicKeyFromBytes([]byte{})
+		_, err := NewPublicKeyFromBytes([]byte{}, []byte{})
 		if err == nil {
 			t.Error("Expected error for empty data, but got none")
 		}
@@ -1064,7 +1079,7 @@ func TestInputValidation_NewPublicKeyFromBytes(t *testing.T) {
 
 	t.Run("InvalidLength", func(t *testing.T) {
 		invalidData := []byte{0x01, 0x02, 0x03}
-		_, err := NewPublicKeyFromBytes(invalidData)
+		_, err := NewPublicKeyFromBytes(invalidData, invalidData)
 		if err == nil {
 			t.Error("Expected error for invalid length data, but got none")
 		}
@@ -1075,7 +1090,7 @@ func TestInputValidation_NewPublicKeyFromBytes(t *testing.T) {
 		for i := range wrongData {
 			wrongData[i] = 0xFF
 		}
-		_, err := NewPublicKeyFromBytes(wrongData)
+		_, err := NewPublicKeyFromBytes(wrongData, wrongData)
 		if err == nil {
 			t.Error("Expected error for wrong format data, but got none")
 		}
@@ -1088,7 +1103,7 @@ func TestInputValidation_NewPublicKeyFromBytes(t *testing.T) {
 		for i := range g1Data {
 			g1Data[i] = 0xFF
 		}
-		_, err := NewPublicKeyFromBytes(g1Data)
+		_, err := NewPublicKeyFromBytes(g1Data, g1Data)
 		if err == nil {
 			t.Error("Expected error for invalid G1 point data, but got none")
 		}
@@ -1101,7 +1116,7 @@ func TestInputValidation_NewPublicKeyFromBytes(t *testing.T) {
 		for i := range g2Data {
 			g2Data[i] = 0xFF
 		}
-		_, err := NewPublicKeyFromBytes(g2Data)
+		_, err := NewPublicKeyFromBytes(g2Data, g2Data)
 		if err == nil {
 			t.Error("Expected error for invalid G2 point data, but got none")
 		}
@@ -1110,21 +1125,21 @@ func TestInputValidation_NewPublicKeyFromBytes(t *testing.T) {
 
 func TestInputValidation_NewPublicKeyFromHexString(t *testing.T) {
 	t.Run("EmptyString", func(t *testing.T) {
-		_, err := NewPublicKeyFromHexString("")
+		_, err := NewPublicKeyFromHexString("", "")
 		if err == nil {
 			t.Error("Expected error for empty string, but got none")
 		}
 	})
 
 	t.Run("InvalidHex", func(t *testing.T) {
-		_, err := NewPublicKeyFromHexString("invalid_hex")
+		_, err := NewPublicKeyFromHexString("invalid_hex", "invalid_hex")
 		if err == nil {
 			t.Error("Expected error for invalid hex string, but got none")
 		}
 	})
 
 	t.Run("OddLengthHex", func(t *testing.T) {
-		_, err := NewPublicKeyFromHexString("123")
+		_, err := NewPublicKeyFromHexString("123", "123")
 		if err == nil {
 			t.Error("Expected error for odd-length hex string, but got none")
 		}
@@ -1132,7 +1147,7 @@ func TestInputValidation_NewPublicKeyFromHexString(t *testing.T) {
 
 	t.Run("InvalidLength", func(t *testing.T) {
 		shortHex := "123456" // Too short for a public key
-		_, err := NewPublicKeyFromHexString(shortHex)
+		_, err := NewPublicKeyFromHexString(shortHex, shortHex)
 		if err == nil {
 			t.Error("Expected error for hex string too short for public key, but got none")
 		}
@@ -1811,35 +1826,22 @@ func TestInputValidation_PrivateKeyMethods(t *testing.T) {
 }
 
 func TestInputValidation_PublicKeyMethods(t *testing.T) {
+
 	t.Run("NilPublicKeyBytes", func(t *testing.T) {
-		pk := &PublicKey{PointBytes: nil, g1Point: nil, g2Point: nil}
-		bytes := pk.Bytes()
-		if bytes != nil {
-			t.Error("Expected nil bytes for nil PointBytes, but got non-nil")
+		pk := &PublicKey{g1Point: nil, g2Point: nil}
+		g1Bytes := pk.GetG1Point()
+		g2Bytes := pk.GetG2Point()
+		if g1Bytes != nil || g2Bytes != nil {
+			t.Error("Expected empty bytes for nil g1Point and g2Point")
 		}
 	})
 
 	t.Run("EmptyPublicKeyBytes", func(t *testing.T) {
-		pk := &PublicKey{PointBytes: []byte{}, g1Point: nil, g2Point: nil}
-		bytes := pk.Bytes()
-		if len(bytes) != 0 {
-			t.Error("Expected empty bytes for empty PointBytes")
-		}
-	})
-
-	t.Run("GetG1Point_Nil", func(t *testing.T) {
-		pk := &PublicKey{PointBytes: nil, g1Point: nil, g2Point: nil}
-		g1Point := pk.GetG1Point()
-		if g1Point != nil {
-			t.Error("Expected nil G1 point for nil g1Point")
-		}
-	})
-
-	t.Run("GetG2Point_Nil", func(t *testing.T) {
-		pk := &PublicKey{PointBytes: nil, g1Point: nil, g2Point: nil}
-		g2Point := pk.GetG2Point()
-		if g2Point != nil {
-			t.Error("Expected nil G2 point for nil g2Point")
+		pk := &PublicKey{g1Point: &bn254.G1Affine{}, g2Point: &bn254.G2Affine{}}
+		g1Bytes := pk.GetG1Point()
+		g2Bytes := pk.GetG2Point()
+		if g1Bytes != nil || g2Bytes != nil {
+			t.Error("Expected empty bytes for empty g1Point and g2Point")
 		}
 	})
 
@@ -2445,9 +2447,8 @@ func TestPublicKeyOperations(t *testing.T) {
 	t.Run("Sub_ValidPublicKey", func(t *testing.T) {
 		// Create a copy to avoid modifying original
 		pubKey1Copy := &PublicKey{
-			g1Point:    pubKey1.g1Point,
-			g2Point:    pubKey1.g2Point,
-			PointBytes: pubKey1.PointBytes,
+			g1Point: pubKey1.g1Point,
+			g2Point: pubKey1.g2Point,
 		}
 
 		result := pubKey1Copy.Sub(pubKey2)
@@ -2461,9 +2462,8 @@ func TestPublicKeyOperations(t *testing.T) {
 
 	t.Run("Sub_PublicKeyWithNilG2Point", func(t *testing.T) {
 		pubKey1Copy := &PublicKey{
-			g1Point:    pubKey1.g1Point,
-			g2Point:    pubKey1.g2Point,
-			PointBytes: pubKey1.PointBytes,
+			g1Point: pubKey1.g1Point,
+			g2Point: pubKey1.g2Point,
 		}
 
 		pubKeyWithNilG2 := &PublicKey{
@@ -2482,14 +2482,12 @@ func TestPublicKeyOperations(t *testing.T) {
 
 	t.Run("Sub_SamePublicKey", func(t *testing.T) {
 		pubKey1Copy := &PublicKey{
-			g1Point:    pubKey1.g1Point,
-			g2Point:    pubKey1.g2Point,
-			PointBytes: pubKey1.PointBytes,
+			g1Point: pubKey1.g1Point,
+			g2Point: pubKey1.g2Point,
 		}
 		pubKey1Copy2 := &PublicKey{
-			g1Point:    pubKey1.g1Point,
-			g2Point:    pubKey1.g2Point,
-			PointBytes: pubKey1.PointBytes,
+			g1Point: pubKey1.g1Point,
+			g2Point: pubKey1.g2Point,
 		}
 
 		result := pubKey1Copy.Sub(pubKey1Copy2)
@@ -2543,8 +2541,9 @@ func TestSchemeAdapterMethods_ExtendedCoverage(t *testing.T) {
 			t.Fatalf("Failed to generate key pair: %v", err)
 		}
 
-		data := pubKey.Bytes()
-		schemePubKey, err := scheme.NewPublicKeyFromBytes(data)
+		g1Bytes := pubKey.GetG1Point().Bytes()
+		g2Bytes := pubKey.GetG2Point().Bytes()
+		schemePubKey, err := scheme.NewPublicKeyFromBytes(g1Bytes[:], g2Bytes[:])
 		if err != nil {
 			t.Fatalf("Expected no error for valid data, but got: %v", err)
 		}
@@ -2555,13 +2554,17 @@ func TestSchemeAdapterMethods_ExtendedCoverage(t *testing.T) {
 
 	t.Run("NewPublicKeyFromHexString_ValidHex", func(t *testing.T) {
 		// Generate a valid public key first
+		// TODO: this is a hack to get the public key bytes
 		_, pubKey, err := GenerateKeyPair()
 		if err != nil {
 			t.Fatalf("Failed to generate key pair: %v", err)
 		}
 
-		hexStr := hex.EncodeToString(pubKey.Bytes())
-		schemePubKey, err := scheme.NewPublicKeyFromHexString(hexStr)
+		g1Bytes := pubKey.GetG1Point().Bytes()
+		g2Bytes := pubKey.GetG2Point().Bytes()
+		hexStr1 := hex.EncodeToString(g1Bytes[:])
+		hexStr2 := hex.EncodeToString(g2Bytes[:])
+		schemePubKey, err := scheme.NewPublicKeyFromHexString(hexStr1, hexStr2)
 		if err != nil {
 			t.Fatalf("Expected no error for valid hex, but got: %v", err)
 		}
@@ -2630,31 +2633,6 @@ func TestSchemeAdapterMethods_ExtendedCoverage(t *testing.T) {
 		bytes := sig.Bytes()
 		if bytes == nil {
 			t.Error("Expected non-nil bytes")
-		}
-	})
-
-	t.Run("SignatureAdapter_VerifyWithRawPublicKey", func(t *testing.T) {
-		privKey, pubKey, err := scheme.GenerateKeyPair()
-		if err != nil {
-			t.Fatalf("Failed to generate key pair: %v", err)
-		}
-
-		sig, err := privKey.Sign([]byte("test"))
-		if err != nil {
-			t.Fatalf("Failed to sign: %v", err)
-		}
-
-		// Extract raw public key
-		adapter := pubKey.(*publicKeyAdapter)
-		rawPubKey := adapter.pk
-
-		// Verify with raw public key
-		valid, err := sig.Verify(rawPubKey, []byte("test"))
-		if err != nil {
-			t.Fatalf("Expected no error for verification, but got: %v", err)
-		}
-		if !valid {
-			t.Error("Expected valid signature")
 		}
 	})
 
@@ -3037,6 +3015,13 @@ func (f *fakeSignature) Bytes() []byte {
 type fakePublicKey struct{}
 
 func (f *fakePublicKey) Bytes() []byte {
+	return nil
+}
+
+func (f *fakePublicKey) G1Bytes() []byte {
+	return nil
+}
+func (f *fakePublicKey) G2Bytes() []byte {
 	return nil
 }
 

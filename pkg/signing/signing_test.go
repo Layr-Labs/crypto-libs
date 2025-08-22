@@ -3,8 +3,9 @@ package signing_test
 
 import (
 	"bytes"
-	"github.com/Layr-Labs/crypto-libs/pkg/signing"
 	"testing"
+
+	"github.com/Layr-Labs/crypto-libs/pkg/signing"
 
 	"github.com/Layr-Labs/crypto-libs/pkg/bls381"
 	"github.com/Layr-Labs/crypto-libs/pkg/bn254"
@@ -43,7 +44,8 @@ func TestGenericSigningInterface(t *testing.T) {
 
 			// Test serialization/deserialization
 			privKeyBytes := privKey.Bytes()
-			pubKeyBytes := pubKey.Bytes()
+			g1PubKeyBytes := pubKey.G1Bytes()
+			g2PubKeyBytes := pubKey.G2Bytes()
 			sigBytes := sig.Bytes()
 
 			// Deserialize
@@ -52,7 +54,7 @@ func TestGenericSigningInterface(t *testing.T) {
 				t.Fatalf("Failed to deserialize private key: %v", err)
 			}
 
-			recoveredPubKey, err := scheme.NewPublicKeyFromBytes(pubKeyBytes)
+			recoveredPubKey, err := scheme.NewPublicKeyFromBytes(g1PubKeyBytes, g2PubKeyBytes)
 			if err != nil {
 				t.Fatalf("Failed to deserialize public key: %v", err)
 			}
@@ -67,7 +69,11 @@ func TestGenericSigningInterface(t *testing.T) {
 				t.Error("Deserialized private key doesn't match original")
 			}
 
-			if !bytes.Equal(recoveredPubKey.Bytes(), pubKeyBytes) {
+			if !bytes.Equal(recoveredPubKey.G1Bytes(), g1PubKeyBytes) {
+				t.Error("Deserialized public key doesn't match original")
+			}
+
+			if !bytes.Equal(recoveredPubKey.G2Bytes(), g2PubKeyBytes) {
 				t.Error("Deserialized public key doesn't match original")
 			}
 

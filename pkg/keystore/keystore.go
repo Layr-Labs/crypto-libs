@@ -732,7 +732,7 @@ func GenerateKeystore(privateKey signing.PrivateKey, password, curveType string,
 
 	// Get the public key
 	publicKey := privateKey.Public()
-	pubkeyBytes := publicKey.Bytes()
+	pubkeyBytes := publicKey.G2Bytes()
 	pubkeyHex := hex.EncodeToString(pubkeyBytes)
 
 	// Generate salt and IV
